@@ -1,5 +1,6 @@
 import re
 from urllib.parse import quote
+from services.email_service import check_email
 
 import httpx
 
@@ -85,18 +86,22 @@ async def analyze_email(email: str) -> dict:
             "message": "Invalid email address."
         }
 
-    domain = email.split("@")[1]
+    result = await check_email(email)
+
+    if result.get("status") == "error":
+        return {
+            "type": "email",
+            "input": email,
+            "status": "ERROR",
+            "message": result.get("message", "Email check failed.")
+        }
 
     return {
         "type": "email",
         "input": email,
         "status": "ANALYZED",
-        "domain": domain,
-        "message": (
-            "Email format is valid. "
-            "Detailed exposure checking can be connected "
-            "to an authorized breach-checking service later."
-        )
+        "breach_count": result.get("breach_count", 0),
+        "breaches": result.get("breaches", [])
     }
 
 
