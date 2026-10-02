@@ -1,121 +1,168 @@
 import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [type, setType] = useState('username')
+  const [value, setValue] = useState('')
+  const [result, setResult] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const analyze = async () => {
+    if (!value.trim()) {
+      setError(`Please enter a ${type}.`)
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setResult(null)
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: type,
+          value: value,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error('Something went wrong.')
+      }
+
+      setResult(data)
+    } catch (err) {
+      setError(
+        'Could not connect to the analyzer. Make sure the backend is running.'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="app">
+      <div className="container">
+
+        <h1>Digital Footprint Analyzer</h1>
+
+        <p className="subtitle">
+          Check how exposed your digital identity is.
+        </p>
+
+        <div className="selector">
+          <button
+            className={type === 'username' ? 'active' : ''}
+            onClick={() => {
+              setType('username')
+              setResult(null)
+              setError('')
+              setValue('')
+            }}
+          >
+            Username
+          </button>
+
+          <button
+            className={type === 'email' ? 'active' : ''}
+            onClick={() => {
+              setType('email')
+              setResult(null)
+              setError('')
+              setValue('')
+            }}
+          >
+            Email
+          </button>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
+
+        <label>
+          Enter your {type}
+        </label>
+
+        <input
+          type={type === 'email' ? 'email' : 'text'}
+          placeholder={
+            type === 'username'
+              ? 'Enter username'
+              : 'Enter email address'
+          }
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+
+        <button className="analyze-button" onClick={analyze}>
+          {loading ? 'Analyzing...' : 'Analyze'}
         </button>
-      </section>
 
-      <div className="ticks"></div>
+        {error && <p className="error">{error}</p>}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {result && type === 'username' && (
+          <div className="result">
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+            <h2>Your Exposure Score</h2>
+
+            <div className="score">
+              {result.exposure_score} / 100
+            </div>
+
+            <p>
+              Profiles found: {result.profiles_found}
+            </p>
+
+            <h3>Platform Results</h3>
+
+            <div className="platforms">
+              {result.results.map((item) => (
+                <div className="platform" key={item.platform}>
+                  <span>{item.platform}</span>
+
+                  <span
+                    className={
+                      item.status === 'FOUND'
+                        ? 'found'
+                        : item.status === 'NOT_FOUND'
+                        ? 'not-found'
+                        : 'unknown'
+                    }
+                  >
+                    {item.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+          </div>
+        )}
+
+        {result && type === 'email' && (
+          <div className="result">
+
+            <h2>Email Analysis</h2>
+
+            <div className="email-status">
+              {result.status}
+            </div>
+
+            <p>{result.message}</p>
+
+            {result.domain && (
+              <p>
+                Domain: <strong>{result.domain}</strong>
+              </p>
+            )}
+
+          </div>
+        )}
+
+      </div>
+    </div>
   )
 }
 
