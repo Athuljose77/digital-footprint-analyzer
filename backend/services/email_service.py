@@ -1,51 +1,126 @@
-import re
 import httpx
+from urllib.parse import quote
 
 
-def validate_email(email: str) -> bool:
-    pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-    return bool(re.match(pattern, email.strip()))
+async def check_email(email: str) -> dict:
+    """
+    Check an email address against XposedOrNot.
+    """
 
+    encoded_email = quote(email, safe="")
 
-def process_breach_details(data: dict) -> list:
-    breaches = []
+    url = (
+        f"https://api.xposedornot.com/v1/check-email/"
+        f"{encoded_email}"
+    )
 
-    for breach in data.get("breach_details", []):
-        breaches.append({
-            "name": breach.get("name"),
-            "records_exposed": breach.get("records_exposed"),
-            "breach_date": breach.get("breach_date"),
-            "industry": breach.get("company", {}).get("industry"),
-            "password_risk": breach.get("security", {}).get("password_risk"),
-            "verified": breach.get("security", {}).get("is_verified"),
-            "exposed_data": breach.get("exposed_data", [])
-        })
+    try:
+        async with httpx.AsyncClient(
+            timeout=15.0
+        ) as client:
 
-    return breaches
+            response = await client.get(url)
 
+        data = response.json()
 
-async def check_email(email: str):
+        # -----------------------------
+        # EMAIL NOT FOUND
+        # -----------------------------
 
-    email = email.strip().lower()
+        if data.get("Error") == "Not found":
 
-    if not validate_email(email):
+            return {
+                "status": "SUCCESS",
+                "breaches": []
+            }
+
+        # -----------------------------
+        # EMAIL FOUND
+        # -----------------------------
+
+        if data.get("status") == "success":
+
+            raw_breaches = data.get(
+                "breaches",
+                []
+            )
+
+            # XposedOrNot returns:
+            #
+            # "breaches": [
+            #     ["Site1", "Site2", "Site3"]
+            # ]
+            #
+            # Convert it into:
+            #
+            # ["Site1", "Site2", "Site3"]
+
+            breaches = []
+
+            if raw_breaches:
+
+                for item in raw_breaches:
+
+                    if isinstance(item, list):
+
+                        breaches.extend(item)
+
+                    elif isinstance(item, str):
+
+                        breaches.append(item)
+
+            return {
+                "status": "SUCCESS",
+                "breaches": [
+                    {
+                        "name": name
+                    }
+                    for name in breaches
+                ]
+            }
+
+        # -----------------------------
+        # RATE LIMIT
+        # -----------------------------
+
+        if response.status_code == 429:
+
+            return {
+                "status": "ERROR",
+                "message": (
+                    "Too many requests. "
+                    "Please wait and try again."
+                )
+            }
+
+        # -----------------------------
+        # UNEXPECTED RESPONSE
+        # -----------------------------
+
         return {
-            "status": "error",
-            "message": "Invalid email address."
+            "status": "ERROR",
+            "message": (
+                "Unexpected response from "
+                "XposedOrNot."
+            )
         }
 
-    url = f"https://api.xposedornot.com/v1/check-email/{email}?details=true"
+    except httpx.RequestError:
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url)
+        return {
+            "status": "ERROR",
+            "message": (
+                "Could not connect to the "
+                "breach database."
+            )
+        }
 
-    data = response.json()
+    except ValueError:
 
-    breaches = process_breach_details(data)
-
-    return {
-        "status": "success",
-        "email": email,
-        "breach_count": len(breaches),
-        "breaches": breaches
-    }
+        return {
+            "status": "ERROR",
+            "message": (
+                "Invalid response from the "
+                "breach database."
+            )
+        }
