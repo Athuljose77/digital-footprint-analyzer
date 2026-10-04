@@ -1,12 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
-from services.analyzer import analyze
+from routes.username import router as username_router
 
 
-app = FastAPI(title="Digital Footprint Analyzer")
+app = FastAPI(
+    title="Digital Footprint Analyzer"
+)
 
+
+# -----------------------------------------
+# CORS CONFIGURATION
+# -----------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,18 +27,24 @@ app.add_middleware(
 )
 
 
-class AnalyzeRequest(BaseModel):
-    type: str
-    value: str
-
+# -----------------------------------------
+# ROOT ROUTE
+# -----------------------------------------
 
 @app.get("/")
 def root():
     return {
-        "message": "Digital Footprint Analyzer API is running"
+        "message": (
+            "Digital Footprint Analyzer "
+            "API is running"
+        )
     }
 
 
-@app.post("/analyze")
-async def run_analysis(request: AnalyzeRequest):
-    return await analyze(request.type, request.value)
+# -----------------------------------------
+# USERNAME ROUTES
+# -----------------------------------------
+
+app.include_router(
+    username_router
+)
