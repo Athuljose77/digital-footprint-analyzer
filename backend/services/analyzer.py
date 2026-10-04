@@ -4,6 +4,7 @@ import re
 from urllib.parse import quote
 
 from services.email_service import check_email
+from services.username_service import check_username
 
 
 # Platforms to check for username
@@ -109,54 +110,62 @@ async def analyze_username(
 
     username = username.strip()
 
-    results = []
+    result = await check_username(username)
 
-    async with httpx.AsyncClient(
-        follow_redirects=True,
-        timeout=8.0,
-        headers={
-            "User-Agent":
-                "DigitalFootprintAnalyzer/1.0"
+    if result.get("status") == "ERROR":
+
+        return {
+            "type": "username",
+            "input": username,
+            "status": "ERROR",
+            "message": result.get(
+                "message",
+                "Username analysis failed."
+            ),
+            "results": []
         }
-    ) as client:
 
-        for platform, url_template in PLATFORMS.items():
-
-            result = await check_platform(
-                client,
-                platform,
-                url_template,
-                username
-            )
-
-            results.append(result)
-
-    # Count FOUND profiles
-    found = sum(
-        1
-        for item in results
-        if item["status"] == "FOUND"
+    results = result.get(
+        "results",
+        []
     )
 
-    # Count UNKNOWN results
-    unknown = sum(
-        1
-        for item in results
-        if item["status"] == "UNKNOWN"
-    )
+    found = len(results)
 
-    # Project-specific exposure score
-    exposure_score = min(
-        found * 10,
-        100
-    )
+    # -------------------------
+    # Username exposure score
+    # -------------------------
+
+    if found == 0:
+
+        exposure_score = 0
+
+    elif found <= 2:
+
+        exposure_score = 20
+
+    elif found <= 5:
+
+        exposure_score = 40
+
+    elif found <= 10:
+
+        exposure_score = 60
+
+    elif found <= 20:
+
+        exposure_score = 80
+
+    else:
+
+        exposure_score = 100
 
     return {
         "type": "username",
         "input": username,
+        "status": result.get("status"),
         "profiles_found": found,
-        "unknown_count": unknown,
-        "platform_count": len(PLATFORMS),
+        "platform_count": found,
         "exposure_score": exposure_score,
         "results": results
     }

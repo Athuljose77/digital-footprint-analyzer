@@ -5,7 +5,7 @@ import re
 from urllib.parse import urlparse
 
 
-TIMEOUT_SECONDS = 120
+TIMEOUT_SECONDS = 90
 
 
 def run_sherlock(username: str):
@@ -21,6 +21,8 @@ def run_sherlock(username: str):
         username,
         "--print-found",
         "--no-color",
+        "--timeout",
+        "10",
     ]
 
     result = subprocess.run(
@@ -41,15 +43,11 @@ async def check_username(username: str) -> dict:
     using Sherlock.
     """
 
-    # -----------------------------------------
-    # CLEAN USERNAME
-    # -----------------------------------------
-
     username = username.strip()
 
-    # -----------------------------------------
-    # VALIDATION
-    # -----------------------------------------
+    # -------------------------
+    # Input validation
+    # -------------------------
 
     if not username:
         return {
@@ -67,19 +65,17 @@ async def check_username(username: str) -> dict:
             "results": []
         }
 
-    # -----------------------------------------
-    # RUN SHERLOCK
-    # -----------------------------------------
+    # -------------------------
+    # Run Sherlock
+    # -------------------------
 
     try:
-
         result = await asyncio.to_thread(
             run_sherlock,
             username
         )
 
     except subprocess.TimeoutExpired:
-
         return {
             "username": username,
             "status": "UNKNOWN",
@@ -88,7 +84,6 @@ async def check_username(username: str) -> dict:
         }
 
     except Exception as error:
-
         return {
             "username": username,
             "status": "ERROR",
@@ -99,20 +94,14 @@ async def check_username(username: str) -> dict:
             "results": []
         }
 
-    # -----------------------------------------
-    # GET OUTPUT
-    # -----------------------------------------
-
     output = result.stdout
-
     error_output = result.stderr
 
-    # -----------------------------------------
-    # SHERLOCK PROCESS ERROR
-    # -----------------------------------------
+    # -------------------------
+    # Sherlock execution error
+    # -------------------------
 
     if result.returncode != 0:
-
         return {
             "username": username,
             "status": "ERROR",
@@ -123,9 +112,9 @@ async def check_username(username: str) -> dict:
             "results": []
         }
 
-    # -----------------------------------------
-    # PARSE RESULTS
-    # -----------------------------------------
+    # -------------------------
+    # Parse Sherlock output
+    # -------------------------
 
     results = []
 
@@ -136,18 +125,18 @@ async def check_username(username: str) -> dict:
         if not line:
             continue
 
-        # Sherlock found results normally
-        # contain a URL.
+        # Only process lines containing URLs
         if (
             "http://" not in line
             and "https://" not in line
         ):
             continue
 
-        # -------------------------------------
-        # EXTRACT URL
-        # -------------------------------------
+        # Ignore Sherlock informational/footer links
+        if line.startswith("Try OSINTSearch"):
+            continue
 
+        # Extract URL
         url_match = re.search(
             r"https?://\S+",
             line
@@ -158,13 +147,78 @@ async def check_username(username: str) -> dict:
 
         profile_url = url_match.group(0)
 
+        # Remove punctuation accidentally captured
         profile_url = profile_url.rstrip(
             ".,)]}>"
         )
 
-        # -------------------------------------
-        # EXTRACT PLATFORM
-        # -------------------------------------
+        # Parse URL
+        parsed = urlparse(profile_url)
+
+        # --------------------------------
+        # Ignore platform homepages
+        # --------------------------------
+
+        if (
+            parsed.path in ("", "/")
+            and not parsed.query
+        ):
+            continue
+
+        # --------------------------------
+        # Ignore known API/search endpoints
+        # --------------------------------
+
+        ignored_url_parts = [
+            "/api/",
+            "/search",
+            "/query",
+            "/lookup",
+            "/osint-tools/",
+            "api.mojang.com",
+        ]
+
+        url_to_check = (
+            parsed.netloc
+            + parsed.path
+            + "?"
+            + parsed.query
+        ).lower()
+
+        if any(
+            part in url_to_check
+            for part in ignored_url_parts
+        ):
+            continue
+
+        # --------------------------------
+        # Ignore search/query parameters
+        # --------------------------------
+
+        query_lower = parsed.query.lower()
+
+        if (
+            "search/" in query_lower
+            or "search=" in query_lower
+            or "query=" in query_lower
+        ):
+            continue
+
+        # --------------------------------
+        # Ignore Wikipedia account-management pages
+        # --------------------------------
+
+        if (
+            parsed.netloc.lower() == "en.wikipedia.org"
+            and parsed.path.lower().startswith(
+                "/wiki/special:centralauth/"
+            )
+        ):
+            continue
+
+        # --------------------------------
+        # Extract platform name
+        # --------------------------------
 
         platform = extract_platform(
             line,
@@ -179,9 +233,9 @@ async def check_username(username: str) -> dict:
             }
         )
 
-    # -----------------------------------------
-    # REMOVE DUPLICATES
-    # -----------------------------------------
+    # -------------------------
+    # Remove duplicate URLs
+    # -------------------------
 
     unique_results = []
 
@@ -202,12 +256,11 @@ async def check_username(username: str) -> dict:
 
     results = unique_results
 
-    # -----------------------------------------
-    # FINAL RESULT
-    # -----------------------------------------
+    # -------------------------
+    # Final result
+    # -------------------------
 
     if results:
-
         return {
             "username": username,
             "status": "FOUND",
@@ -229,9 +282,8 @@ def extract_platform(
     Extract the platform name from Sherlock output.
     """
 
-    # -----------------------------------------
-    # SHERLOCK FORMAT
-    # -----------------------------------------
+    # Sherlock output usually contains:
+    # [+] Platform: URL
 
     if ":" in line:
 
@@ -245,13 +297,9 @@ def extract_platform(
         ).strip()
 
         if prefix:
-
             return prefix
 
-    # -----------------------------------------
-    # URL FALLBACK
-    # -----------------------------------------
-
+    # Fallback to hostname
     try:
 
         parsed = urlparse(
@@ -261,11 +309,9 @@ def extract_platform(
         hostname = parsed.hostname
 
         if hostname:
-
             return hostname
 
     except Exception:
-
         pass
 
     return "Unknown"

@@ -4,17 +4,22 @@ from urllib.parse import quote
 
 async def check_email(email: str) -> dict:
     """
-    Check an email address against XposedOrNot.
+    Check an email address against XposedOrNot
+    and return detailed breach information.
     """
 
-    encoded_email = quote(email, safe="")
+    encoded_email = quote(
+        email.strip(),
+        safe=""
+    )
 
     url = (
         f"https://api.xposedornot.com/v1/check-email/"
-        f"{encoded_email}"
+        f"{encoded_email}?details=true"
     )
 
     try:
+
         async with httpx.AsyncClient(
             timeout=15.0
         ) as client:
@@ -41,42 +46,57 @@ async def check_email(email: str) -> dict:
         if data.get("status") == "success":
 
             raw_breaches = data.get(
-                "breaches",
+                "breach_details",
                 []
             )
 
-            # XposedOrNot returns:
-            #
-            # "breaches": [
-            #     ["Site1", "Site2", "Site3"]
-            # ]
-            #
-            # Convert it into:
-            #
-            # ["Site1", "Site2", "Site3"]
-
             breaches = []
 
-            if raw_breaches:
+            for breach in raw_breaches:
 
-                for item in raw_breaches:
+                breaches.append({
+                    "name": breach.get(
+                        "name"
+                    ),
 
-                    if isinstance(item, list):
+                    "records_exposed": breach.get(
+                        "records_exposed"
+                    ),
 
-                        breaches.extend(item)
+                    "breach_date": breach.get(
+                        "breach_date"
+                    ),
 
-                    elif isinstance(item, str):
+                    "industry": breach.get(
+                        "company",
+                        {}
+                    ).get(
+                        "industry"
+                    ),
 
-                        breaches.append(item)
+                    "password_risk": breach.get(
+                        "security",
+                        {}
+                    ).get(
+                        "password_risk"
+                    ),
+
+                    "verified": breach.get(
+                        "security",
+                        {}
+                    ).get(
+                        "is_verified"
+                    ),
+
+                    "exposed_data": breach.get(
+                        "exposed_data",
+                        []
+                    )
+                })
 
             return {
                 "status": "SUCCESS",
-                "breaches": [
-                    {
-                        "name": name
-                    }
-                    for name in breaches
-                ]
+                "breaches": breaches
             }
 
         # -----------------------------
