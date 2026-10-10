@@ -1,30 +1,8 @@
-import httpx
 import re
-
-from urllib.parse import quote
 
 from services.email_service import check_email
 from services.username_service import check_username
 
-
-# Platforms to check for username
-PLATFORMS = {
-    "GitHub": "https://github.com/{}",
-    "GitLab": "https://gitlab.com/{}",
-    "Reddit": "https://www.reddit.com/user/{}",
-    "Hugging Face": "https://huggingface.co/{}",
-    "Dev.to": "https://dev.to/{}",
-    "Medium": "https://medium.com/@{}",
-    "Pinterest": "https://www.pinterest.com/{}/",
-    "CodePen": "https://codepen.io/{}",
-    "Replit": "https://replit.com/@{}",
-    "Kaggle": "https://www.kaggle.com/{}",
-    "Docker Hub": "https://hub.docker.com/u/{}",
-    "npm": "https://www.npmjs.com/~{}",
-    "PyPI": "https://pypi.org/user/{}/",
-    "Keybase": "https://keybase.io/{}",
-    "Buy Me a Coffee": "https://www.buymeacoffee.com/{}",
-}
 
 
 # -----------------------------
@@ -41,63 +19,6 @@ def validate_email(email: str) -> bool:
             email.strip()
         )
     )
-
-
-# -----------------------------
-# CHECK USERNAME PLATFORM
-# -----------------------------
-
-async def check_platform(
-    client: httpx.AsyncClient,
-    platform: str,
-    url_template: str,
-    username: str
-) -> dict:
-
-    encoded_username = quote(
-        username,
-        safe=""
-    )
-
-    profile_url = url_template.format(
-        encoded_username
-    )
-
-    try:
-
-        response = await client.get(
-            profile_url
-        )
-
-        if response.status_code == 200:
-
-            status = "FOUND"
-
-        elif response.status_code == 404:
-
-            status = "NOT_FOUND"
-
-        elif response.status_code in [
-            401,
-            403,
-            429
-        ]:
-
-            status = "UNKNOWN"
-
-        else:
-
-            status = "UNKNOWN"
-
-    except httpx.RequestError:
-
-        status = "UNKNOWN"
-
-    return {
-        "platform": platform,
-        "status": status,
-        "profile_url": profile_url
-    }
 
 
 # -----------------------------
