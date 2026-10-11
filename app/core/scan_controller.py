@@ -447,12 +447,15 @@ async def run_browser_scan() -> ScanResult:
             b_name = browser.get("name", "Unknown Browser")
             b_version = browser.get("version")
             b_source = browser.get("detection_source", "Unknown")
+            b_exe = browser.get("executable_path")
             profiles = browser.get("profiles", [])
             ext_count = browser.get("extension_count", 0)
 
             val_str = b_name
             if b_version:
                 val_str += f" — version {b_version}"
+            if b_exe:
+                val_str += f" | Path: {b_exe}"
             val_str += f" | Profiles: {', '.join(profiles) if profiles else 'None found'}"
             val_str += f" | Extensions: {ext_count}"
 
