@@ -65,6 +65,18 @@ class MainWindow(QMainWindow):
         self.sys_results_area.setReadOnly(True)
         layout.addWidget(self.sys_results_area)
 
+        # --- Browser Footprint Section ---
+        self.browser_scan_btn = QPushButton("Browser Footprint")
+        self.browser_scan_btn.clicked.connect(self.start_browser_scan)
+        layout.addWidget(self.browser_scan_btn)
+
+        self.browser_status_label = QLabel("")
+        layout.addWidget(self.browser_status_label)
+
+        self.browser_results_area = QTextEdit()
+        self.browser_results_area.setReadOnly(True)
+        layout.addWidget(self.browser_results_area)
+
         layout.addStretch()
         self.pages.addWidget(page)
 
@@ -124,6 +136,19 @@ class MainWindow(QMainWindow):
         self.worker.error_occurred.connect(self.on_scan_error)
         self.worker.start()
 
+    def start_browser_scan(self):
+        if self.worker and self.worker.isRunning():
+            return
+
+        self.browser_scan_btn.setEnabled(False)
+        self.browser_status_label.setText("Scanning browsers... Please wait.")
+        self.browser_results_area.clear()
+
+        self.worker = ScanWorker("Browser", "")
+        self.worker.result_ready.connect(self.on_scan_complete)
+        self.worker.error_occurred.connect(self.on_scan_error)
+        self.worker.start()
+
     def start_scan(self):
         if self.worker and self.worker.isRunning():
             return
@@ -146,10 +171,14 @@ class MainWindow(QMainWindow):
 
     def on_scan_complete(self, result):
         is_sys = (result.scan_type == "System")
+        is_browser = (result.scan_type == "Browser")
         
         if is_sys:
             self.sys_scan_btn.setEnabled(True)
             self.sys_status_label.setText(f"Status: {result.status} | Message: {result.message}")
+        elif is_browser:
+            self.browser_scan_btn.setEnabled(True)
+            self.browser_status_label.setText(f"Status: {result.status} | Message: {result.message}")
         else:
             self.scan_btn.setEnabled(True)
             self.status_label.setText(f"Status: {result.status} | Message: {result.message}")
@@ -186,6 +215,8 @@ class MainWindow(QMainWindow):
                 output_text.append(f"[{f.severity}] {f.title}\nDescription: {f.description}\nEvidence: {evidence_text}\n")
         if is_sys:
             self.sys_results_area.setText("\n".join(output_text))
+        elif is_browser:
+            self.browser_results_area.setText("\n".join(output_text))
         else:
             self.results_area.setText("\n".join(output_text))
 
@@ -196,3 +227,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'sys_scan_btn'):
             self.sys_scan_btn.setEnabled(True)
             self.sys_status_label.setText(f"Error: {err_msg}")
+        if hasattr(self, 'browser_scan_btn'):
+            self.browser_scan_btn.setEnabled(True)
+            self.browser_status_label.setText(f"Error: {err_msg}")

@@ -298,3 +298,164 @@ async def run_system_scan() -> ScanResult:
         result.status = "ERROR"
         result.message = str(e)
         return result
+
+
+from app.services.browser_service import check_browsers
+
+async def run_browser_scan() -> ScanResult:
+    scan_id = str(uuid.uuid4())
+    result = ScanResult(
+        scan_id=scan_id,
+        analysis_mode="My Footprint",
+        scan_type="Browser",
+        scan_category="Browser Footprint",
+        status="RUNNING"
+    )
+
+    try:
+        data = await check_browsers()
+
+        if data.get("status") == "UNAVAILABLE":
+            result.status = "COMPLETED"
+            result.message = "Browser footprint scanning is not available on this platform."
+            unavail = data.get("unavailable_sources", [])
+            if unavail:
+                result.footprint_data.append(FootprintData(
+                    category="Browser",
+                    subcategory="Scan Coverage",
+                    source="Browser Footprint Service",
+                    data_type="coverage",
+                    value="Unavailable: " + "; ".join(unavail),
+                    sensitivity="Low"
+                ))
+            return result
+
+        # --- Map detected browsers to FootprintData ---
+        browsers = data.get("browsers", [])
+        extensions = data.get("extensions", [])
+        coverage = data.get("coverage", {})
+        errors = data.get("errors", [])
+
+        for browser in browsers:
+            b_name = browser.get("name", "Unknown Browser")
+            b_version = browser.get("version")
+            b_source = browser.get("detection_source", "Unknown")
+            profiles = browser.get("profiles", [])
+            ext_count = browser.get("extension_count", 0)
+
+            val_str = b_name
+            if b_version:
+                val_str += f" — version {b_version}"
+            val_str += f" | Profiles: {', '.join(profiles) if profiles else 'None found'}"
+            val_str += f" | Extensions: {ext_count}"
+
+            result.footprint_data.append(FootprintData(
+                category="Browser",
+                subcategory="Detected Browser",
+                source=b_source,
+                data_type="browser",
+                value=val_str,
+                sensitivity="Low"
+            ))
+
+        # --- Map extensions to FootprintData ---
+        for ext in extensions:
+            ext_name = ext.get("name", "Unknown Extension")
+            ext_ver = ext.get("version")
+            ext_desc = ext.get("description")
+            ext_id = ext.get("extension_id", "")
+            ext_browser = ext.get("browser", "Unknown")
+            ext_profile = ext.get("profile", "Unknown")
+
+            val_str = ext_name
+            if ext_ver:
+                val_str += f" (v{ext_ver})"
+            val_str += f" | ID: {ext_id}"
+            val_str += f" | Browser: {ext_browser}"
+            val_str += f" | Profile: {ext_profile}"
+            if ext_desc:
+                val_str += f" | {ext_desc}"
+
+            result.footprint_data.append(FootprintData(
+                category="Browser",
+                subcategory="Extension",
+                source=f"{ext_browser} Extension Directory",
+                data_type="extension",
+                value=val_str,
+                sensitivity="Low"
+            ))
+
+        # --- Coverage information as a Finding ---
+        searched = coverage.get("browsers_searched", [])
+        detected = coverage.get("browsers_detected", [])
+        not_detected = coverage.get("browsers_not_detected", [])
+        unsupported = coverage.get("unsupported_browsers", [])
+        profiles_count = coverage.get("profiles_scanned", 0)
+        ext_count = coverage.get("extensions_found", 0)
+        failed_sources = coverage.get("sources_failed", [])
+
+        coverage_parts = []
+        coverage_parts.append(f"Browsers searched: {', '.join(searched) if searched else 'None'}")
+        coverage_parts.append(f"Browsers detected: {', '.join(detected) if detected else 'None'}")
+        if not_detected:
+            coverage_parts.append(f"Not detected: {', '.join(not_detected)}")
+        coverage_parts.append(f"Profiles scanned: {profiles_count}")
+        coverage_parts.append(f"Extensions found: {ext_count}")
+        if unsupported:
+            coverage_parts.append(f"Not scanned (unsupported): {', '.join(unsupported)}")
+
+        result.findings.append(Finding(
+            finding_id=str(uuid.uuid4()),
+            finding_type="Scan Coverage",
+            title="Browser Footprint Scan Coverage",
+            description=" | ".join(coverage_parts),
+            evidence={"searched": searched, "detected": detected,
+                       "not_detected": not_detected, "unsupported": unsupported},
+            severity="Info",
+            status="Informational"
+        ))
+
+        # --- Unavailable sources as a Finding ---
+        if failed_sources:
+            result.findings.append(Finding(
+                finding_id=str(uuid.uuid4()),
+                finding_type="Unavailable Sources",
+                title="Sources That Could Not Be Checked",
+                description=" | ".join(failed_sources),
+                evidence=failed_sources,
+                severity="Info",
+                status="Informational"
+            ))
+
+        # --- Non-fatal errors as a Finding ---
+        if errors:
+            result.findings.append(Finding(
+                finding_id=str(uuid.uuid4()),
+                finding_type="Scan Warnings",
+                title="Non-Fatal Scan Warnings",
+                description=f"{len(errors)} warning(s) encountered during scan",
+                evidence=errors,
+                severity="Low",
+                status="Informational"
+            ))
+
+        # --- Summary message ---
+        msg_parts = []
+        if browsers:
+            msg_parts.append(f"{len(browsers)} browser(s) detected")
+        else:
+            msg_parts.append("No supported browsers detected")
+        if extensions:
+            msg_parts.append(f"{len(extensions)} extension(s) found")
+        msg_parts.append(f"{profiles_count} profile(s) scanned")
+        if unsupported:
+            msg_parts.append(f"{len(unsupported)} browser(s) not scanned (unsupported)")
+        result.message = "Browser scan completed. " + ". ".join(msg_parts) + "."
+
+        result.status = "COMPLETED"
+        return result
+
+    except Exception as e:
+        result.status = "ERROR"
+        result.message = str(e)
+        return result
