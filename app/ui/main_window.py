@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         sys_tab = QWidget()
         sys_layout = QVBoxLayout(sys_tab)
         
-        self.sys_scan_btn = QPushButton("Scan System Footprint")
+        self.sys_scan_btn = QPushButton("System Footprint")
         self.sys_scan_btn.clicked.connect(self.start_system_scan)
         sys_layout.addWidget(self.sys_scan_btn)
 
@@ -76,7 +76,24 @@ class MainWindow(QMainWindow):
 
         self.my_footprint_tabs.addTab(sys_tab, "System Footprint")
 
-        # Tab 2: File & Metadata Footprint
+        # Tab 2: Browser Footprint
+        browser_tab = QWidget()
+        browser_layout = QVBoxLayout(browser_tab)
+
+        self.browser_scan_btn = QPushButton("Browser Footprint")
+        self.browser_scan_btn.clicked.connect(self.start_browser_scan)
+        browser_layout.addWidget(self.browser_scan_btn)
+
+        self.browser_status_label = QLabel("")
+        browser_layout.addWidget(self.browser_status_label)
+
+        self.browser_results_area = QTextEdit()
+        self.browser_results_area.setReadOnly(True)
+        browser_layout.addWidget(self.browser_results_area)
+
+        self.my_footprint_tabs.addTab(browser_tab, "Browser Footprint")
+
+        # Tab 3: File & Metadata Footprint
         file_tab = QWidget()
         file_layout = QVBoxLayout(file_tab)
         
@@ -110,6 +127,7 @@ class MainWindow(QMainWindow):
         self.my_footprint_tabs.addTab(file_tab, "File & Metadata Footprint")
 
         layout.addWidget(self.my_footprint_tabs)
+        layout.addStretch()
         self.pages.addWidget(page)
 
     def init_public_lookup_page(self):
@@ -164,6 +182,19 @@ class MainWindow(QMainWindow):
         self.sys_results_area.clear()
 
         self.worker = ScanWorker("System", "")
+        self.worker.result_ready.connect(self.on_scan_complete)
+        self.worker.error_occurred.connect(self.on_scan_error)
+        self.worker.start()
+
+    def start_browser_scan(self):
+        if self.worker and self.worker.isRunning():
+            return
+
+        self.browser_scan_btn.setEnabled(False)
+        self.browser_status_label.setText("Scanning browsers... Please wait.")
+        self.browser_results_area.clear()
+
+        self.worker = ScanWorker("Browser", "")
         self.worker.result_ready.connect(self.on_scan_complete)
         self.worker.error_occurred.connect(self.on_scan_error)
         self.worker.start()
@@ -228,6 +259,7 @@ class MainWindow(QMainWindow):
     def on_scan_complete(self, result):
         is_sys = (result.scan_type == "System")
         is_file = (result.scan_type == "File & Metadata")
+        is_browser = (result.scan_type == "Browser")
         
         if is_sys:
             self.sys_scan_btn.setEnabled(True)
@@ -236,6 +268,9 @@ class MainWindow(QMainWindow):
             self.file_select_btn.setEnabled(True)
             self.file_analyze_btn.setEnabled(True)
             self.file_status_label.setText(f"Status: {result.status} | Message: {result.message}")
+        elif is_browser:
+            self.browser_scan_btn.setEnabled(True)
+            self.browser_status_label.setText(f"Status: {result.status} | Message: {result.message}")
         else:
             self.scan_btn.setEnabled(True)
             self.status_label.setText(f"Status: {result.status} | Message: {result.message}")
@@ -307,6 +342,8 @@ class MainWindow(QMainWindow):
                 output_text.append(f"[{f.severity}] {f.title}\nDescription: {f.description}\nEvidence: {evidence_text}\n")
         if is_sys:
             self.sys_results_area.setText("\n".join(output_text))
+        elif is_browser:
+            self.browser_results_area.setText("\n".join(output_text))
         else:
             self.results_area.setText("\n".join(output_text))
 
@@ -323,4 +360,7 @@ class MainWindow(QMainWindow):
             self.file_analyze_btn.setEnabled(True)
         if hasattr(self, 'file_status_label'):
             self.file_status_label.setText(f"Error: {err_msg}")
-
+        if hasattr(self, 'browser_scan_btn'):
+            self.browser_scan_btn.setEnabled(True)
+        if hasattr(self, 'browser_status_label'):
+            self.browser_status_label.setText(f"Error: {err_msg}")
