@@ -1,0 +1,6 @@
+{
+  "venvPath": "/home/athul/projects/digital-footprint-analyzer/backend",
+  "venv": "venv",
+  "pythonVersion": "3.14",
+  "extraPaths": ["."]
+}
