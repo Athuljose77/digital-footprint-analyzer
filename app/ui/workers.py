@@ -1,6 +1,6 @@
 from PySide6.QtCore import QThread, Signal
 import asyncio
-from app.core.scan_controller import run_email_scan, run_username_scan, run_system_scan
+from app.core.scan_controller import run_email_scan, run_username_scan, run_system_scan, run_file_metadata_scan
 from app.models.common import ScanResult
 
 class ScanWorker(QThread):
@@ -25,6 +25,8 @@ class ScanWorker(QThread):
                 result = loop.run_until_complete(run_username_scan(self.target))
             elif self.scan_type == "System":
                 result = loop.run_until_complete(run_system_scan())
+            elif self.scan_type == "File & Metadata":
+                result = loop.run_until_complete(run_file_metadata_scan(self.target))
             else:
                 raise ValueError("Unknown scan type")
             

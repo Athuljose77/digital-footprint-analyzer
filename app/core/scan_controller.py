@@ -298,3 +298,113 @@ async def run_system_scan() -> ScanResult:
         result.status = "ERROR"
         result.message = str(e)
         return result
+
+
+from app.services.file_metadata_service import check_file_metadata
+
+async def run_file_metadata_scan(file_path: str) -> ScanResult:
+    scan_id = str(uuid.uuid4())
+    result = ScanResult(
+        scan_id=scan_id,
+        analysis_mode="My Footprint",
+        scan_type="File & Metadata",
+        scan_category="File & Metadata Footprint",
+        status="RUNNING"
+    )
+    
+    try:
+        data = await check_file_metadata(file_path)
+        
+        if data.get("status") == "ERROR":
+            result.status = "ERROR"
+            result.message = data.get("message", "File metadata analysis error.")
+            return result
+            
+        if data.get("status") == "SUCCESS":
+            result.status = "COMPLETED"
+            res = data.get("results", {})
+            file_info = res.get("file_info", {})
+            meta = res.get("metadata", {})
+            sensitive = res.get("potentially_sensitive", [])
+            is_supported = res.get("is_supported", False)
+            
+            # 1. File Details
+            result.footprint_data.append(FootprintData(
+                category="File & Metadata",
+                subcategory="File Information",
+                source="File System",
+                data_type="file_info",
+                value=f"Name: {file_info.get('file_name')} | Size: {file_info.get('file_size')} | Type: {file_info.get('file_type')}",
+                sensitivity="Low"
+            ))
+            result.footprint_data.append(FootprintData(
+                category="File & Metadata",
+                subcategory="File Path",
+                source="File System",
+                data_type="file_path",
+                value=file_info.get("file_path", file_path),
+                sensitivity="Low"
+            ))
+            result.footprint_data.append(FootprintData(
+                category="File & Metadata",
+                subcategory="File Timestamps",
+                source="File System",
+                data_type="timestamps",
+                value=f"Created: {file_info.get('created_time')} | Modified: {file_info.get('modified_time')}",
+                sensitivity="Low"
+            ))
+            
+            # 2. Extracted Embedded Metadata
+            if meta:
+                for k, v in meta.items():
+                    result.footprint_data.append(FootprintData(
+                        category="File & Metadata",
+                        subcategory="Embedded Metadata",
+                        source="Metadata Parser",
+                        data_type="metadata_field",
+                        value=f"{k}: {v}",
+                        sensitivity="Low"
+                    ))
+            elif is_supported:
+                result.footprint_data.append(FootprintData(
+                    category="File & Metadata",
+                    subcategory="Embedded Metadata",
+                    source="Metadata Parser",
+                    data_type="status",
+                    value="No embedded metadata tags detected in this file.",
+                    sensitivity="Low"
+                ))
+            else:
+                result.footprint_data.append(FootprintData(
+                    category="File & Metadata",
+                    subcategory="Embedded Metadata",
+                    source="Metadata Parser",
+                    data_type="status",
+                    value="Unsupported file format for embedded metadata analysis in v1.",
+                    sensitivity="Low"
+                ))
+                
+            # 3. Potentially Sensitive Metadata
+            if sensitive:
+                for s in sensitive:
+                    result.footprint_data.append(FootprintData(
+                        category="File & Metadata",
+                        subcategory="Potentially Sensitive",
+                        source=s.get("category", "Privacy Indicator"),
+                        data_type="sensitive_metadata",
+                        value=f"[{s.get('category')}] {s.get('field')}: {s.get('value')} — {s.get('description')}",
+                        sensitivity="High" if "Location" in s.get("category", "") else "Medium"
+                    ))
+                    
+            result.message = data.get("message", "Analysis completed.")
+            return result
+
+        result.status = "UNKNOWN"
+        result.message = "Unexpected status from file metadata service."
+        return result
+        
+    except Exception as e:
+        result.status = "ERROR"
+        result.message = str(e)
+        return result
+
