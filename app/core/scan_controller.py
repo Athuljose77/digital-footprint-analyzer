@@ -6,6 +6,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from app.models.common import ScanResult, FootprintData, Finding
+from app.core.findings_processor import FindingsProcessor
 from backend.services.email_service import check_email
 from backend.services.username_service import check_username
 
@@ -38,7 +39,7 @@ async def run_email_scan(email: str) -> ScanResult:
             
             if not breaches:
                 result.message = "No known breaches found."
-                return result
+                return FindingsProcessor.process_scan_result(result)
                 
             result.message = f"Found {len(breaches)} breaches."
             
@@ -53,7 +54,7 @@ async def run_email_scan(email: str) -> ScanResult:
                     severity="High" if b.get("password_risk") else "Medium",
                     status="Unremediated"
                 ))
-            return result
+            return FindingsProcessor.process_scan_result(result)
             
         result.status = "UNKNOWN"
         result.message = "Unexpected status from email service"
@@ -96,12 +97,12 @@ async def run_username_scan(username: str) -> ScanResult:
                     value=item.get("profile_url"),
                     sensitivity="Low"
                 ))
-            return result
+            return FindingsProcessor.process_scan_result(result)
             
         if data.get("status") == "NOT_FOUND":
             result.status = "COMPLETED"
             result.message = "No profiles found."
-            return result
+            return FindingsProcessor.process_scan_result(result)
             
         result.status = "UNKNOWN"
         result.message = "Unexpected status from username service"
@@ -288,7 +289,7 @@ async def run_system_scan() -> ScanResult:
                     sensitivity="Low"
                 ))
 
-            return result
+            return FindingsProcessor.process_scan_result(result)
             
         result.status = "ERROR"
         result.message = "System scan failed."
@@ -397,7 +398,7 @@ async def run_file_metadata_scan(file_path: str) -> ScanResult:
                     ))
                     
             result.message = data.get("message", "Analysis completed.")
-            return result
+            return FindingsProcessor.process_scan_result(result)
 
         result.status = "UNKNOWN"
         result.message = "Unexpected status from file metadata service."
@@ -435,7 +436,7 @@ async def run_browser_scan() -> ScanResult:
                     value="Unavailable: " + "; ".join(unavail),
                     sensitivity="Low"
                 ))
-            return result
+            return FindingsProcessor.process_scan_result(result)
 
         # --- Map detected browsers to FootprintData ---
         browsers = data.get("browsers", [])
@@ -563,7 +564,7 @@ async def run_browser_scan() -> ScanResult:
         result.message = "Browser scan completed. " + ". ".join(msg_parts) + "."
 
         result.status = "COMPLETED"
-        return result
+        return FindingsProcessor.process_scan_result(result)
 
     except Exception as e:
         result.status = "ERROR"

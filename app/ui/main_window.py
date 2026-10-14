@@ -256,6 +256,10 @@ class MainWindow(QMainWindow):
         self.worker.error_occurred.connect(self.on_scan_error)
         self.worker.start()
 
+    def format_finding(self, f) -> str:
+        evidence_text = ", ".join(f.evidence) if isinstance(f.evidence, list) else str(f.evidence)
+        return f"[{f.severity}] {f.title}\nStatus: {f.status}\nDescription: {f.description}\nEvidence: {evidence_text}\n"
+
     def on_scan_complete(self, result):
         is_sys = (result.scan_type == "System")
         is_file = (result.scan_type == "File & Metadata")
@@ -275,8 +279,7 @@ class MainWindow(QMainWindow):
             self.scan_btn.setEnabled(True)
             self.status_label.setText(f"Status: {result.status} | Message: {result.message}")
         
-        # Format output
-        output_text = []
+        # 1. Format File & Metadata scans
         if is_file:
             file_output = ["=== FILE & METADATA FOOTPRINT ==="]
             file_details = []
@@ -309,40 +312,55 @@ class MainWindow(QMainWindow):
                 file_output.append("\n[Potentially Sensitive Metadata]")
                 file_output.append("  No potentially sensitive metadata detected in this file.")
 
+            if result.findings:
+                file_output.append("\n=== FINDINGS ===")
+                for f in result.findings:
+                    file_output.append(self.format_finding(f))
+
             self.file_results_area.setText("\n".join(file_output))
             return
 
+        # 2. Format System Footprint scans (place findings before lengthy installed apps)
+        output_text = []
+        if is_sys:
+            output_text.append("=== FOOTPRINT DATA ===")
+            output_text.append("System Footprint:")
+            system_info = []
+            installed_apps = []
+            for fd in result.footprint_data:
+                if fd.subcategory == "Installed Applications":
+                    installed_apps.append(fd)
+                else:
+                    system_info.append(fd)
+            
+            for fd in system_info:
+                output_text.append(f"  {fd.subcategory}: {fd.value}  [Source: {fd.source}]")
+
+            if result.findings:
+                output_text.append("\n=== FINDINGS ===")
+                for f in result.findings:
+                    output_text.append(self.format_finding(f))
+
+            if installed_apps:
+                output_text.append(f"\n  Installed Applications ({len(installed_apps)} detected):")
+                for app in installed_apps:
+                    output_text.append(f"    • {app.value}  [Source: {app.source}]")
+
+            self.sys_results_area.setText("\n".join(output_text))
+            return
+
+        # 3. Format Browser, Username, and Email scans
         if result.footprint_data:
             output_text.append("=== FOOTPRINT DATA ===")
-            if result.scan_type == "System":
-                output_text.append("System Footprint:")
-                system_info = []
-                installed_apps = []
-                for fd in result.footprint_data:
-                    if fd.subcategory == "Installed Applications":
-                        installed_apps.append(fd)
-                    else:
-                        system_info.append(fd)
-                
-                for fd in system_info:
-                    output_text.append(f"  {fd.subcategory}: {fd.value}  [Source: {fd.source}]")
-                
-                if installed_apps:
-                    output_text.append(f"\n  Installed Applications ({len(installed_apps)} detected):")
-                    for app in installed_apps:
-                        output_text.append(f"    • {app.value}  [Source: {app.source}]")
-            else:
-                for fd in result.footprint_data:
-                    output_text.append(f"Source: {fd.source}\nValue: {fd.value}\n")
-                
+            for fd in result.footprint_data:
+                output_text.append(f"Source: {fd.source}\nValue: {fd.value}\n")
+            
         if result.findings:
             output_text.append("=== FINDINGS ===")
             for f in result.findings:
-                evidence_text = ", ".join(f.evidence) if isinstance(f.evidence, list) else str(f.evidence)
-                output_text.append(f"[{f.severity}] {f.title}\nDescription: {f.description}\nEvidence: {evidence_text}\n")
-        if is_sys:
-            self.sys_results_area.setText("\n".join(output_text))
-        elif is_browser:
+                output_text.append(self.format_finding(f))
+
+        if is_browser:
             self.browser_results_area.setText("\n".join(output_text))
         else:
             self.results_area.setText("\n".join(output_text))
