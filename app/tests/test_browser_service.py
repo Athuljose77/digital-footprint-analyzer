@@ -327,6 +327,8 @@ class TestBrowserDetection:
         }
 
         mock_winreg = mock.MagicMock()
+        mock_winreg.HKEY_LOCAL_MACHINE = 1
+        mock_winreg.HKEY_CURRENT_USER = 2
 
         def mock_registry_key_exists(hkey, subkey):
             if subkey == browser_spec["registry_app_path"]:
@@ -339,6 +341,7 @@ class TestBrowserDetection:
             return None
 
         with mock.patch.dict(os.environ, {"LOCALAPPDATA": "/fake/local"}), \
+             mock.patch.dict("sys.modules", {"winreg": mock_winreg}), \
              mock.patch("app.services.browser_service.sys") as mock_sys, \
              mock.patch("app.services.browser_service._registry_key_exists", side_effect=mock_registry_key_exists), \
              mock.patch("app.services.browser_service._read_registry_string", side_effect=mock_read_registry_string), \
@@ -520,12 +523,12 @@ class TestNonWindowsPlatform:
 
     def test_check_browsers_non_windows(self):
         with mock.patch("app.services.browser_service.platform") as mock_platform:
-            mock_platform.system.return_value = "Linux"
+            mock_platform.system.return_value = "Darwin"
             result = asyncio.run(check_browsers())
 
         assert result["status"] == "UNAVAILABLE"
         assert len(result["browsers"]) == 0
-        assert "Linux" in result["unavailable_sources"][0]
+        assert "Darwin" in result["unavailable_sources"][0]
 
     def test_coverage_on_non_windows(self):
         with mock.patch("app.services.browser_service.platform") as mock_platform:
@@ -690,6 +693,15 @@ class TestUIIntegration:
             app = QApplication([])
         window = MainWindow()
         yield app, window
+        if hasattr(window, 'worker') and window.worker:
+            try:
+                if not window.worker.isFinished():
+                    window.worker.wait(2000)
+            except Exception:
+                pass
+        window.close()
+        window.deleteLater()
+        app.processEvents()
 
     def test_browser_button_exists(self, app_and_window):
         _, window = app_and_window
@@ -834,6 +846,15 @@ class TestRegressions:
             app = QApplication([])
         window = MainWindow()
         yield app, window
+        if hasattr(window, 'worker') and window.worker:
+            try:
+                if not window.worker.isFinished():
+                    window.worker.wait(2000)
+            except Exception:
+                pass
+        window.close()
+        window.deleteLater()
+        app.processEvents()
 
     def test_sidebar_has_all_pages(self, app_and_window):
         """Sidebar should still have Home, My Footprint, Public Lookup, Settings."""

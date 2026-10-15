@@ -24,6 +24,9 @@ class Finding(BaseModel):
     evidence: Optional[Any] = None
     severity: str
     status: str
+    category: str = "Observation"
+    rule_id: Optional[str] = None
+    limitations: Optional[str] = None
 
 class FootprintData(BaseModel):
     category: str

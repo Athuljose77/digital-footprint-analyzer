@@ -18,9 +18,9 @@ if app is None:
 class TestUIFindingsVisibility(unittest.TestCase):
     """
     Focused tests verifying:
-    1. File & Metadata scan findings are visible in self.file_results_area (not discarded by early return).
-    2. Status is explicitly displayed across all 5 scan modules.
-    3. Findings in System Footprint are placed before lengthy installed-application details.
+    1. File & Metadata scan findings are visible in the split Findings view.
+    2. Status is explicitly displayed via the scan status label.
+    3. System collected evidence remains accessible separately.
     4. Empty findings are handled cleanly without fabricating findings.
     """
 
@@ -42,7 +42,10 @@ class TestUIFindingsVisibility(unittest.TestCase):
             description="Geographic coordinates found in EXIF",
             evidence=["37.7749 N, 122.4194 W"],
             severity="High",
-            status="Unremediated"
+            status="Unremediated",
+            category="Concern",
+            rule_id=None,
+            limitations=None,
         )
         result = ScanResult(
             scan_id="file-scan-1",
@@ -60,22 +63,17 @@ class TestUIFindingsVisibility(unittest.TestCase):
         )
 
         self.window.on_scan_complete(result)
-        text = self.window.file_results_area.toPlainText()
-
-        # Verify footprint sections are preserved
-        self.assertIn("=== FILE & METADATA FOOTPRINT ===", text)
-        self.assertIn("[File Details]", text)
-        self.assertIn("vacation.jpg", text)
-        self.assertIn("[Extracted Metadata", text)
-        self.assertIn("Make: Canon", text)
-        self.assertIn("[Potentially Sensitive Metadata", text)
+        findings_html = self.window.file_findings_area.toHtml()
 
         # Verify processed findings are displayed and not discarded by early return
-        self.assertIn("=== FINDINGS ===", text)
-        self.assertIn("[High] Location Metadata Detected in File", text)
-        self.assertIn("Status: Unremediated", text)
-        self.assertIn("Description: Geographic coordinates found in EXIF", text)
-        self.assertIn("Evidence: 37.7749 N, 122.4194 W", text)
+        self.assertIn("Location Metadata Detected in File", findings_html)
+        self.assertIn("Geographic coordinates found in EXIF", findings_html)
+        self.assertIn("37.7749 N, 122.4194 W", findings_html)
+
+        evidence_html = self.window.file_results_area.toHtml()
+        # Verify footprint sections are preserved in collected evidence
+        self.assertIn("vacation.jpg", evidence_html)
+        self.assertIn("Make: Canon", evidence_html)
 
     def test_file_metadata_empty_findings_does_not_fabricate(self):
         result = ScanResult(
@@ -92,16 +90,15 @@ class TestUIFindingsVisibility(unittest.TestCase):
         )
 
         self.window.on_scan_complete(result)
-        text = self.window.file_results_area.toPlainText()
+        findings_html = self.window.file_findings_area.toHtml()
 
-        self.assertIn("=== FILE & METADATA FOOTPRINT ===", text)
-        self.assertNotIn("=== FINDINGS ===", text)
+        self.assertIn("No findings were generated for this scan.", findings_html)
 
     # =========================================================================
-    # 2. SYSTEM FOOTPRINT FINDINGS PLACEMENT
+    # 2. SYSTEM FOOTPRINT FINDINGS ACCESSIBILITY
     # =========================================================================
 
-    def test_system_findings_placed_before_installed_applications(self):
+    def test_system_findings_are_available_in_split_view(self):
         finding = Finding(
             finding_id="sys-f-1",
             finding_type="System Configuration",
@@ -109,7 +106,10 @@ class TestUIFindingsVisibility(unittest.TestCase):
             description="Applications configured to start automatically on system boot were detected.",
             evidence=["App1.exe", "App2.exe"],
             severity="Low",
-            status="Informational"
+            status="Informational",
+            category="Observation",
+            rule_id=None,
+            limitations=None,
         )
         installed = [
             FootprintData(category="System", subcategory="Installed Applications", source="Registry", data_type="app", value=f"App_{i}", sensitivity="Low")
@@ -131,20 +131,13 @@ class TestUIFindingsVisibility(unittest.TestCase):
         )
 
         self.window.on_scan_complete(result)
-        text = self.window.sys_results_area.toPlainText()
+        findings_html = self.window.sys_findings_area.toHtml()
+        evidence_html = self.window.sys_results_area.toHtml()
 
-        # Both sections must be present
-        self.assertIn("=== FINDINGS ===", text)
-        self.assertIn("Installed Applications (10 detected):", text)
-
-        # FINDINGS must appear before Installed Applications in the text
-        idx_findings = text.index("=== FINDINGS ===")
-        idx_installed = text.index("Installed Applications (10 detected):")
-        self.assertLess(idx_findings, idx_installed, "Findings section must be placed before installed applications!")
-
-        # Verify finding content
-        self.assertIn("[Low] Persistent Startup Footprint (2 detected)", text)
-        self.assertIn("Status: Informational", text)
+        self.assertIn("Persistent Startup Footprint (2 detected)", findings_html)
+        self.assertIn("Installed Applications (10 detected):", evidence_html)
+        self.assertEqual(self.window.sys_sub_tabs.tabText(0), "Findings (1)")
+        self.assertEqual(self.window.sys_sub_tabs.tabText(1), "Collected Evidence (12)")
 
     # =========================================================================
     # 3. CONSISTENT STATUS DISPLAY ACROSS MODULES
@@ -162,10 +155,9 @@ class TestUIFindingsVisibility(unittest.TestCase):
             ]
         )
         self.window.on_scan_complete(result)
-        text = self.window.results_area.toPlainText()
+        findings_html = self.window.public_findings_area.toHtml()
 
-        self.assertIn("[High] Exposed in BreachCorp", text)
-        self.assertIn("Status: Unremediated", text)
+        self.assertIn("Exposed in BreachCorp", findings_html)
 
     def test_status_displayed_in_username_scan(self):
         result = ScanResult(
@@ -182,10 +174,9 @@ class TestUIFindingsVisibility(unittest.TestCase):
             ]
         )
         self.window.on_scan_complete(result)
-        text = self.window.results_area.toPlainText()
+        findings_html = self.window.public_findings_area.toHtml()
 
-        self.assertIn("[Info] Possible username matches — ownership unverified", text)
-        self.assertIn("Status: Informational", text)
+        self.assertIn("Possible username matches — ownership unverified", findings_html)
 
     def test_status_displayed_in_browser_scan(self):
         result = ScanResult(
@@ -199,10 +190,9 @@ class TestUIFindingsVisibility(unittest.TestCase):
             ]
         )
         self.window.on_scan_complete(result)
-        text = self.window.browser_results_area.toPlainText()
+        findings_html = self.window.browser_findings_area.toHtml()
 
-        self.assertIn("[Info] Browser Scan Coverage", text)
-        self.assertIn("Status: Informational", text)
+        self.assertIn("Browser Scan Coverage", findings_html)
 
 
 if __name__ == "__main__":

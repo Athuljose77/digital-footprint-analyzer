@@ -80,6 +80,25 @@ def _merge_evidence(ev1: Any, ev2: Any) -> Any:
     return merged_items if merged_items else ev1
 
 
+def _is_random_uuid(value: str) -> bool:
+    """Return true when *value* has the format of a generated UUID."""
+    try:
+        import uuid
+        parsed = uuid.UUID(str(value))
+        return parsed.version == 4
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def _deterministic_finding_id(
+    finding_type: str, title: str, description: str, severity: str, status: str
+) -> str:
+    import uuid
+    normalized = "::".join(
+        part.strip().lower() for part in (finding_type, title, description, severity, status)
+    )
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, normalized or "digital-footprint-finding"))
+
 class FindingsProcessor:
     """
     Central processor for normalizing, deduplicating, and synthesizing
@@ -93,13 +112,23 @@ class FindingsProcessor:
         Handles missing fields safely with sane defaults.
         """
         if isinstance(item, Finding):
-            finding_id = item.finding_id or str(uuid.uuid4())
             finding_type = item.finding_type.strip() if item.finding_type else "General"
             title = item.title.strip() if item.title else "Untitled Finding"
             description = item.description.strip() if item.description else ""
             severity = _normalize_severity_name(item.severity)
             status = item.status.strip().capitalize() if item.status else "Active"
             evidence = copy.deepcopy(item.evidence)
+            category = item.category.strip() if item.category else "Observation"
+            rule_id = item.rule_id.strip() if item.rule_id else None
+            limitations = item.limitations.strip() if item.limitations else None
+
+            supplied_id = item.finding_id
+            if supplied_id and not _is_random_uuid(supplied_id):
+                finding_id = supplied_id
+            else:
+                finding_id = _deterministic_finding_id(
+                    finding_type, title, description, severity, status
+                )
 
             return Finding(
                 finding_id=finding_id,
@@ -108,11 +137,13 @@ class FindingsProcessor:
                 description=description,
                 evidence=evidence,
                 severity=severity,
-                status=status
+                status=status,
+                category=category,
+                rule_id=rule_id,
+                limitations=limitations
             )
 
         if isinstance(item, dict):
-            finding_id = str(item.get("finding_id") or uuid.uuid4())
             finding_type = str(item.get("finding_type") or "General").strip()
             title = str(item.get("title") or "Untitled Finding").strip()
             description = str(item.get("description") or "").strip()
@@ -120,6 +151,21 @@ class FindingsProcessor:
             raw_status = str(item.get("status") or "Active").strip()
             status = raw_status.capitalize() if raw_status else "Active"
             evidence = copy.deepcopy(item.get("evidence"))
+            raw_category = item.get("category")
+            category = str(raw_category).strip() if raw_category is not None and str(raw_category).strip() else "Observation"
+            raw_rule_id = item.get("rule_id")
+            rule_id = str(raw_rule_id).strip() if raw_rule_id is not None and str(raw_rule_id).strip() else None
+            raw_limitations = item.get("limitations")
+            limitations = str(raw_limitations).strip() if raw_limitations is not None and str(raw_limitations).strip() else None
+
+            supplied_id = item.get("finding_id")
+            supplied_id = str(supplied_id).strip() if supplied_id not in (None, "") else None
+            if supplied_id and not _is_random_uuid(supplied_id):
+                finding_id = supplied_id
+            else:
+                finding_id = _deterministic_finding_id(
+                    finding_type, title, description, severity, status
+                )
 
             return Finding(
                 finding_id=finding_id,
@@ -128,7 +174,10 @@ class FindingsProcessor:
                 description=description,
                 evidence=evidence,
                 severity=severity,
-                status=status
+                status=status,
+                category=category,
+                rule_id=rule_id,
+                limitations=limitations
             )
 
         # Fallback for unexpected data types
@@ -139,7 +188,10 @@ class FindingsProcessor:
             description="Normalized from unexpected data type.",
             evidence=None,
             severity="Info",
-            status="Informational"
+            status="Informational",
+            category="Observation",
+            rule_id=None,
+            limitations=None
         )
 
     @classmethod
@@ -163,7 +215,11 @@ class FindingsProcessor:
                 continue
 
             f = cls.normalize_finding(raw_finding)
-            key = f"{f.finding_type.strip().lower()}::{f.title.strip().lower()}"
+            normalized_rule_id = f.rule_id.strip().lower() if f.rule_id else ""
+            if normalized_rule_id:
+                key = f"rule::{normalized_rule_id}::{f.finding_type.strip().lower()}::{f.title.strip().lower()}"
+            else:
+                key = f"{f.finding_type.strip().lower()}::{f.title.strip().lower()}"
 
             if key not in dedup_map:
                 dedup_map[key] = f
@@ -198,6 +254,12 @@ class FindingsProcessor:
                 new_st_rank = status_priority.get(f.status.upper(), 1)
                 chosen_status = existing.status if curr_st_rank >= new_st_rank else f.status
 
+                chosen_category = existing.category if existing.category else f.category
+                chosen_rule_id = existing.rule_id if existing.rule_id is not None else f.rule_id
+                chosen_limitations = existing.limitations
+                if f.limitations and (not chosen_limitations or len(f.limitations) > len(chosen_limitations)):
+                    chosen_limitations = f.limitations
+
                 dedup_map[key] = Finding(
                     finding_id=existing.finding_id,
                     finding_type=existing.finding_type,
@@ -205,7 +267,10 @@ class FindingsProcessor:
                     description=chosen_desc,
                     evidence=merged_evidence,
                     severity=chosen_severity,
-                    status=chosen_status
+                    status=chosen_status,
+                    category=chosen_category,
+                    rule_id=chosen_rule_id,
+                    limitations=chosen_limitations
                 )
 
         return [dedup_map[k] for k in order]
@@ -613,7 +678,7 @@ class FindingsProcessor:
 
         # Deduplicate and sort findings by severity (Critical -> High -> Medium -> Low -> Info)
         deduped = cls.deduplicate_findings(all_findings)
-        deduped.sort(key=lambda f: _get_severity_rank(f.severity), reverse=True)
+        deduped.sort(key=lambda f: (-_get_severity_rank(f.severity), (f.finding_type or "").strip().lower(), (f.title or "").strip().lower()))
 
         # Determine overall status and message
         total_modules = successful_modules + failed_count
@@ -621,7 +686,7 @@ class FindingsProcessor:
             status = "ERROR"
             message = "Scan completed with errors on all attempted modules."
         elif failed_count > 0:
-            status = "PARTIAL" if hasattr(cls, "_allow_partial") else "COMPLETED"
+            status = "PARTIAL"
             message = f"Scan completed with partial results ({successful_modules} succeeded, {failed_count} had limitations)."
         else:
             status = "COMPLETED"
@@ -657,7 +722,7 @@ class FindingsProcessor:
 
         # Deduplicate and sort
         deduped = cls.deduplicate_findings(combined_findings)
-        deduped.sort(key=lambda f: _get_severity_rank(f.severity), reverse=True)
+        deduped.sort(key=lambda f: (-_get_severity_rank(f.severity), (f.finding_type or "").strip().lower(), (f.title or "").strip().lower()))
 
         scan_result.findings = deduped
         return scan_result

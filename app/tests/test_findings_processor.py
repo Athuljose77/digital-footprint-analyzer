@@ -384,6 +384,7 @@ class TestFindingsProcessor(unittest.TestCase):
         # Empty list
         res_empty_list = FindingsProcessor.process_module_results([])
         self.assertIsInstance(res_empty_list, ScanResult)
+        self.assertEqual(res_empty_list.status, "COMPLETED")
         self.assertEqual(len(res_empty_list.findings), 0)
 
     def test_module_error_handling_graceful(self):
@@ -408,6 +409,7 @@ class TestFindingsProcessor(unittest.TestCase):
         limit_finding = next(f for f in combined.findings if "Limitation" in f.title)
         self.assertEqual(limit_finding.severity, "Info")
         self.assertEqual(limit_finding.status, "Limitation")
+        self.assertEqual(combined.status, "PARTIAL")
 
     def test_all_modules_failed_status(self):
         combined = FindingsProcessor.process_module_results(
@@ -478,6 +480,102 @@ class TestFindingsProcessor(unittest.TestCase):
         self.assertEqual(processed.findings[0].title, "Possible username matches — ownership unverified")
         self.assertEqual(processed.findings[0].severity, "Info")
         self.assertEqual(processed.findings[0].status, "Informational")
+
+    def test_finding_optional_fields_default_safely(self):
+        finding = Finding(
+            finding_id="optional-defaults",
+            finding_type="Observation",
+            title="Test Finding",
+            description="Test description",
+            severity="Info",
+            status="Active",
+        )
+
+        self.assertEqual(finding.category, "Observation")
+        self.assertIsNone(finding.rule_id)
+        self.assertIsNone(finding.limitations)
+
+    def test_normalize_finding_preserves_optional_fields(self):
+        raw = Finding(
+            finding_id="optional-normalize",
+            finding_type="Email Breach",
+            title="Exposed in Test",
+            description="Breach record",
+            severity="High",
+            status="Unremediated",
+            category="Concern",
+            rule_id="EML-BREACH-001",
+            limitations="Records are historical exposure.",
+        )
+
+        normalized = FindingsProcessor.normalize_finding(raw)
+
+        self.assertEqual(normalized.category, "Concern")
+        self.assertEqual(normalized.rule_id, "EML-BREACH-001")
+        self.assertEqual(normalized.limitations, "Records are historical exposure.")
+
+    def test_deduplicate_preserves_distinct_rules_and_metadata(self):
+        first = Finding(
+            finding_id="first",
+            finding_type="Public Profile",
+            title="Public Profile Discovered on GitHub",
+            description="First",
+            severity="Info",
+            status="Informational",
+            category="Observation",
+            rule_id="USR-PROFILE-001",
+            limitations="First limitation",
+        )
+        second = Finding(
+            finding_id="second",
+            finding_type="Public Profile",
+            title="Public Profile Discovered on Twitter",
+            description="Second",
+            severity="Info",
+            status="Informational",
+            category="Observation",
+            rule_id="USR-PROFILE-001",
+            limitations="Second limitation",
+        )
+
+        deduplicated = FindingsProcessor.deduplicate_findings([first, second])
+
+        self.assertEqual(len(deduplicated), 2)
+        self.assertEqual(deduplicated[0].rule_id, "USR-PROFILE-001")
+        self.assertEqual(deduplicated[1].rule_id, "USR-PROFILE-001")
+
+    def test_deduplicate_merges_metadata_for_same_identity(self):
+        first = Finding(
+            finding_id="first",
+            finding_type="Email Breach",
+            title="Exposed in TestCorp",
+            description="First",
+            evidence=["email"],
+            severity="Medium",
+            status="Unremediated",
+            category="Concern",
+            rule_id="EML-BREACH-001",
+            limitations="First limitation",
+        )
+        second = Finding(
+            finding_id="second",
+            finding_type="Email Breach",
+            title="Exposed in TestCorp",
+            description="Second",
+            evidence=["password"],
+            severity="High",
+            status="Unremediated",
+            category="Concern",
+            rule_id="EML-BREACH-001",
+            limitations="Second limitation",
+        )
+
+        deduplicated = FindingsProcessor.deduplicate_findings([first, second])
+
+        self.assertEqual(len(deduplicated), 1)
+        self.assertEqual(deduplicated[0].severity, "High")
+        self.assertEqual(sorted(deduplicated[0].evidence), ["email", "password"])
+        self.assertEqual(deduplicated[0].limitations, "Second limitation")
 
 
 # =============================================================================
