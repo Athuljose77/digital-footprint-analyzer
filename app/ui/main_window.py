@@ -8,6 +8,62 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from app.ui.workers import ScanWorker
 
+
+# Maximum finding-evidence entries rendered inside a single findings card.
+# The complete records remain available in the Collected Evidence view.
+FINDING_EVIDENCE_PREVIEW_LIMIT = 10
+
+
+def collect_finding_evidence_items(evidence):
+    """Normalize finding evidence into a list of non-empty display strings.
+
+    Counting rule: each returned string is one evidence entry. Finding
+    evidence is never added to the Collected Evidence count, which is
+    defined solely as len(ScanResult.footprint_data), so shared underlying
+    data is not counted twice.
+    """
+    if evidence is None:
+        return []
+    if isinstance(evidence, list):
+        items = []
+        for entry in evidence:
+            if entry is None:
+                continue
+            text = str(entry).strip()
+            if text:
+                items.append(text)
+        return items
+    if isinstance(evidence, dict):
+        if not evidence:
+            return []
+        return [f"{key}: {value}" for key, value in evidence.items()]
+    text = str(evidence).strip()
+    return [text] if text else []
+
+
+def format_finding_evidence_html(evidence, preview_limit=FINDING_EVIDENCE_PREVIEW_LIMIT):
+    """Render finding evidence as readable bullet lines with a preview cap."""
+    items = collect_finding_evidence_items(evidence)
+    if not items:
+        return '<div style="font-size: 11px; color: #6a737d; font-style: italic;">No evidence recorded.</div>'
+
+    shown = items[:preview_limit]
+    lines = []
+    for item in shown:
+        lines.append(
+            f'<div style="font-size: 11px; margin-bottom: 2px; word-break: break-all;">'
+            f'<span style="color: #0366d6;">•</span> {html.escape(item)}</div>'
+        )
+    remaining = len(items) - len(shown)
+    if remaining > 0:
+        lines.append(
+            f'<div style="font-size: 11px; color: #6a737d; font-style: italic; margin-top: 4px;">'
+            f'+{remaining} more evidence entr{"y" if remaining == 1 else "ies"} — '
+            f'see Collected Evidence for the complete records.</div>'
+        )
+    return "\n".join(lines)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -16,6 +72,7 @@ class MainWindow(QMainWindow):
 
         self.worker = None
         self.selected_file_path = None
+        self.full_scan_file_path = None
 
         # Main widget and layout
         central_widget = QWidget()
@@ -166,6 +223,56 @@ class MainWindow(QMainWindow):
         file_layout.addWidget(self.file_sub_tabs)
 
         self.my_footprint_tabs.addTab(file_tab, "File & Metadata Footprint")
+
+        # -----------------------------
+        # Tab 4: Full Scan
+        # -----------------------------
+        full_tab = QWidget()
+        full_layout = QVBoxLayout(full_tab)
+
+        full_desc = QLabel("Run the System and Browser scans together in one background task. File Metadata is included only when you explicitly select a single file below.")
+        full_desc.setWordWrap(True)
+        full_layout.addWidget(full_desc)
+
+        full_file_row = QHBoxLayout()
+        self.full_scan_select_btn = QPushButton("Select File (Optional)")
+        self.full_scan_select_btn.clicked.connect(self.select_full_scan_file)
+        full_file_row.addWidget(self.full_scan_select_btn)
+
+        self.full_scan_file_label = QLabel("No file selected")
+        self.full_scan_file_label.setStyleSheet("color: #888;")
+        full_file_row.addWidget(self.full_scan_file_label, stretch=1)
+
+        self.full_scan_clear_btn = QPushButton("Clear")
+        self.full_scan_clear_btn.setEnabled(False)
+        self.full_scan_clear_btn.clicked.connect(self.clear_full_scan_file)
+        full_file_row.addWidget(self.full_scan_clear_btn)
+
+        full_layout.addLayout(full_file_row)
+
+        self.full_scan_btn = QPushButton("Run Full Scan")
+        self.full_scan_btn.clicked.connect(self.start_full_scan)
+        full_layout.addWidget(self.full_scan_btn)
+
+        self.full_scan_status_label = QLabel("")
+        self.full_scan_status_label.setWordWrap(True)
+        full_layout.addWidget(self.full_scan_status_label)
+
+        self.full_scan_sub_tabs = QTabWidget()
+
+        self.full_scan_findings_area = QTextEdit()
+        self.full_scan_findings_area.setReadOnly(True)
+        self.full_scan_findings_area.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+
+        self.full_scan_results_area = QTextEdit()
+        self.full_scan_results_area.setReadOnly(True)
+        self.full_scan_results_area.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+
+        self.full_scan_sub_tabs.addTab(self.full_scan_findings_area, "Findings")
+        self.full_scan_sub_tabs.addTab(self.full_scan_results_area, "Collected Evidence")
+        full_layout.addWidget(self.full_scan_sub_tabs)
+
+        self.my_footprint_tabs.addTab(full_tab, "Full Scan")
 
         layout.addWidget(self.my_footprint_tabs)
         self.pages.addWidget(page)
@@ -324,18 +431,101 @@ class MainWindow(QMainWindow):
         self.worker.error_occurred.connect(self.on_scan_error)
         self.worker.start()
 
+    def select_full_scan_file(self):
+        # Explicit opt-in only: selecting a file never starts a scan.
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select File for Full Scan (Optional)",
+            "",
+            "All Supported Images (*.jpg *.jpeg *.png);;JPEG Images (*.jpg *.jpeg);;PNG Images (*.png);;All Files (*)"
+        )
+        if file_path:
+            self.full_scan_file_path = file_path
+            self.full_scan_file_label.setText(os.path.basename(file_path))
+            self.full_scan_file_label.setStyleSheet("color: #000; font-weight: bold;")
+            self.full_scan_clear_btn.setEnabled(True)
+            self.full_scan_status_label.setText("File selected. Click 'Run Full Scan' to include it; otherwise System and Browser scans run without File Metadata.")
+
+    def clear_full_scan_file(self):
+        self.full_scan_file_path = None
+        self.full_scan_file_label.setText("No file selected")
+        self.full_scan_file_label.setStyleSheet("color: #888;")
+        self.full_scan_clear_btn.setEnabled(False)
+
+    def start_full_scan(self):
+        if self.worker and self.worker.isRunning():
+            return
+
+        self.full_scan_btn.setEnabled(False)
+        self.full_scan_select_btn.setEnabled(False)
+        self.full_scan_clear_btn.setEnabled(False)
+        self.full_scan_status_label.setText("Starting Full Scan... System and Browser scans will run; File Metadata runs only if a file was selected.")
+        self.full_scan_findings_area.clear()
+        self.full_scan_results_area.clear()
+        self.full_scan_sub_tabs.setTabText(0, "Findings")
+        self.full_scan_sub_tabs.setTabText(1, "Collected Evidence")
+
+        self.worker = ScanWorker("Full Scan", self.full_scan_file_path or "")
+        self.worker.result_ready.connect(self.on_scan_complete)
+        self.worker.error_occurred.connect(self.on_scan_error)
+        self.worker.progress_changed.connect(self.on_full_scan_progress)
+        self.worker.start()
+
+    def on_full_scan_progress(self, message):
+        # Only Full Scan emits progress; ignore anything unexpected so an
+        # individual scan's status labels can never be overwritten here.
+        if self.worker and getattr(self.worker, 'scan_type', '') == "Full Scan":
+            self.full_scan_status_label.setText(message)
+
     # --------------------------------------------------------
     # HTML FORMATTERS FOR FINDINGS AND COLLECTED EVIDENCE
     # --------------------------------------------------------
 
-    def format_findings_html(self, findings, evidence_count=0):
-        """Formats the list of Finding objects into structured, restrained HTML cards with scan summary."""
+    def format_findings_html(self, findings, evidence_count=0, scan_status=None):
+        """Formats the list of Finding objects into structured, restrained HTML cards with scan summary.
+
+        Counting rules: total/concern/observation counts describe findings
+        only; evidence_count must be len(ScanResult.footprint_data), i.e. the
+        number of records rendered in Collected Evidence. Finding evidence
+        entries are never added to that count.
+        """
         total_findings = len(findings) if findings else 0
         concerns_count = sum(1 for f in findings if (getattr(f, "category", "") or "") == "Concern") if findings else 0
         observations_count = total_findings - concerns_count
+        limitation_count = sum(1 for f in findings if (getattr(f, "finding_type", "") or "") == "Scan Limitation") if findings else 0
+
+        # Overall scan status banner: keeps PARTIAL/ERROR distinguishable from
+        # a clean COMPLETED scan without implying exposure by itself.
+        status_banner = ""
+        if scan_status:
+            status_styles = {
+                "COMPLETED": ("#22863a", "#e6f4ea", "#b7e0c3"),
+                "PARTIAL": ("#b04300", "#fff5e6", "#f0c48c"),
+                "ERROR": ("#cb2431", "#ffeef0", "#f5b5ba"),
+            }
+            text_color, bg_color, border_color = status_styles.get(
+                str(scan_status).strip().upper(), ("#586069", "#f6f8fa", "#e1e4e8")
+            )
+            status_banner = f"""
+        <div style="font-family: sans-serif; margin-bottom: 8px; padding: 6px 12px; background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; font-size: 12px; color: {text_color};">
+            <b>Scan Status:</b> {html.escape(str(scan_status).strip().upper())}
+        </div>
+        """
+
+        # Limitations are scan-coverage notes, never privacy exposures.
+        limitation_note = ""
+        if limitation_count > 0:
+            limitation_note = f"""
+        <div style="font-family: sans-serif; margin-bottom: 12px; padding: 6px 12px; background-color: #f6f8fa; border: 1px dotted #b1b7c0; border-radius: 6px; font-size: 11px; color: #586069;">
+            <b>Scan Limitations ({limitation_count}):</b> notes about sources that could not be checked
+            (unsupported platforms, locked profiles, or failed modules). These describe scan coverage,
+            not confirmed privacy exposures.
+        </div>
+        """
 
         # Build Scan Summary Header Banner
         summary_html = f"""
+        {status_banner}
         <div style="font-family: sans-serif; margin-bottom: 12px; padding: 8px 12px; background-color: #f8f9fa; border: 1px solid #e1e4e8; border-radius: 6px;">
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size: 12px; color: #333;">
                 <tr>
@@ -357,6 +547,7 @@ class MainWindow(QMainWindow):
                 </tr>
             </table>
         </div>
+        {limitation_note}
         """
 
         if not findings:
@@ -407,11 +598,14 @@ class MainWindow(QMainWindow):
             }
             sev_bg = sev_colors.get(sev, "#0366d6")
 
-            evidence_val = f.evidence
-            if isinstance(evidence_val, list):
-                evidence_text = ", ".join(str(e) for e in evidence_val)
-            else:
-                evidence_text = str(evidence_val)
+            evidence_count_for_card = len(collect_finding_evidence_items(f.evidence))
+            evidence_block = format_finding_evidence_html(f.evidence)
+            evidence_heading = (
+                f"Evidence ({evidence_count_for_card} "
+                f"entr{'y' if evidence_count_for_card == 1 else 'ies'}):"
+                if evidence_count_for_card
+                else "Evidence:"
+            )
 
             rule_html = f'<span style="font-size: 11px; color: #6a737d; font-family: monospace;">Rule: {html.escape(rule_id)}</span>' if rule_id else ""
             limitations_html = (
@@ -439,7 +633,8 @@ class MainWindow(QMainWindow):
                     {html.escape(f.description)}
                 </div>
                 <div style="background-color: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 3px; padding: 4px 8px; font-family: monospace; font-size: 11px; color: #24292e; word-break: break-all;">
-                    <b>Evidence:</b> {html.escape(evidence_text)}
+                    <b>{html.escape(evidence_heading)}</b>
+                    {evidence_block}
                 </div>
                 {limitations_html}
             </div>
@@ -591,6 +786,46 @@ class MainWindow(QMainWindow):
         lines.append('</div>')
         return "\n".join(lines)
 
+    def format_full_scan_evidence_html(self, result):
+        """Formats Full Scan collected evidence by reusing per-module renderers."""
+        footprint_data = result.footprint_data or []
+        system = [fd for fd in footprint_data if fd.category == "System"]
+        browser = [fd for fd in footprint_data if fd.category == "Browser"]
+        file_items = [fd for fd in footprint_data if fd.category == "File & Metadata"]
+        other = [fd for fd in footprint_data if fd.category not in ("System", "Browser", "File & Metadata")]
+
+        lines = [
+            '<div style="font-family: sans-serif; padding: 4px;">',
+            '<div style="font-weight: bold; font-size: 13px; margin-bottom: 8px;">=== FULL SCAN EVIDENCE ===</div>'
+        ]
+
+        if system:
+            lines.append('<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">System Footprint:</div>')
+            lines.append(self.format_system_evidence_html(system))
+
+        if browser:
+            lines.append('<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Browser Footprint:</div>')
+            lines.append(self.format_browser_evidence_html(browser))
+
+        if file_items:
+            lines.append('<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">File &amp; Metadata Footprint:</div>')
+            lines.append(self.format_file_evidence_html(file_items))
+        elif "no file selected" in (result.message or "").lower():
+            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: #666;">File Metadata was skipped because no file was selected. Select a file and run Full Scan again to include it.</div>')
+
+        if other:
+            lines.append('<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Additional Evidence:</div>')
+            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+            for fd in other:
+                lines.append(f'<div style="font-size: 12px; margin-bottom: 3px; word-break: break-all;"><b>{html.escape(fd.subcategory)}:</b> {html.escape(str(fd.value))} <span style="color: #888; font-size: 11px;">[Source: {html.escape(fd.source)}]</span></div>')
+            lines.append('</div>')
+
+        if not footprint_data:
+            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: #666;">No collected evidence was returned by the included modules.</div>')
+
+        lines.append('</div>')
+        return "\n".join(lines)
+
     def format_public_evidence_html(self, footprint_data, findings):
         """Formats Public Lookup evidence while preserving text compatibility."""
         lines = [
@@ -623,13 +858,19 @@ class MainWindow(QMainWindow):
         is_sys = (result.scan_type == "System")
         is_file = (result.scan_type == "File & Metadata")
         is_browser = (result.scan_type == "Browser")
+        is_full = (result.scan_type == "Full Scan")
 
         status_text = f"Status: {result.status} | Message: {result.message}"
         findings_count = len(result.findings)
         evidence_count = len(result.footprint_data)
 
-        # Generate shared formatted findings HTML
-        findings_html = self.format_findings_html(result.findings, evidence_count=evidence_count)
+        # Generate shared formatted findings HTML. evidence_count is the
+        # number of FootprintData records (one per Collected Evidence entry);
+        # finding evidence entries are rendered inside cards but never added
+        # to this count, so shared data is not counted twice.
+        findings_html = self.format_findings_html(
+            result.findings, evidence_count=evidence_count, scan_status=result.status
+        )
 
         if is_sys:
             self.sys_scan_btn.setEnabled(True)
@@ -666,6 +907,20 @@ class MainWindow(QMainWindow):
 
             self.file_sub_tabs.setCurrentIndex(0 if findings_count > 0 else 1)
 
+        elif is_full:
+            self.full_scan_btn.setEnabled(True)
+            self.full_scan_select_btn.setEnabled(True)
+            self.full_scan_clear_btn.setEnabled(self.full_scan_file_path is not None)
+            self.full_scan_status_label.setText(status_text)
+            self.full_scan_sub_tabs.setTabText(0, f"Findings ({findings_count})")
+            self.full_scan_sub_tabs.setTabText(1, f"Collected Evidence ({evidence_count})")
+
+            self.full_scan_findings_area.setHtml(findings_html)
+            self.full_scan_results_area.setHtml(self.format_full_scan_evidence_html(result))
+
+            # Switch to Findings if any exist, otherwise Evidence
+            self.full_scan_sub_tabs.setCurrentIndex(0 if findings_count > 0 else 1)
+
         else:
             self.scan_btn.setEnabled(True)
             self.status_label.setText(status_text)
@@ -694,3 +949,11 @@ class MainWindow(QMainWindow):
             self.browser_scan_btn.setEnabled(True)
         if hasattr(self, 'browser_status_label'):
             self.browser_status_label.setText(f"Error: {err_msg}")
+        if hasattr(self, 'full_scan_btn'):
+            self.full_scan_btn.setEnabled(True)
+        if hasattr(self, 'full_scan_select_btn'):
+            self.full_scan_select_btn.setEnabled(True)
+        if hasattr(self, 'full_scan_clear_btn'):
+            self.full_scan_clear_btn.setEnabled(bool(getattr(self, 'full_scan_file_path', None)))
+        if hasattr(self, 'full_scan_status_label'):
+            self.full_scan_status_label.setText(f"Error: {err_msg}")

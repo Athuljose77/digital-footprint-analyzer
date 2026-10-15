@@ -5,10 +5,16 @@ import os
 # Ensure backend modules can be imported
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+from collections.abc import Callable
+
 from app.models.common import ScanResult, FootprintData, Finding
-from app.core.findings_processor import FindingsProcessor
+from app.core.findings_processor import FindingsProcessor, _get_severity_rank
 from backend.services.email_service import check_email
 from backend.services.username_service import check_username
+
+_BROWSER_UNAVAILABLE_MESSAGE = (
+    "Browser footprint scanning is not available on this platform."
+)
 
 async def run_email_scan(email: str) -> ScanResult:
     scan_id = str(uuid.uuid4())
@@ -425,7 +431,7 @@ async def run_browser_scan() -> ScanResult:
 
         if data.get("status") == "UNAVAILABLE":
             result.status = "COMPLETED"
-            result.message = "Browser footprint scanning is not available on this platform."
+            result.message = _BROWSER_UNAVAILABLE_MESSAGE
             unavail = data.get("unavailable_sources", [])
             if unavail:
                 result.footprint_data.append(FootprintData(
@@ -570,4 +576,153 @@ async def run_browser_scan() -> ScanResult:
         result.status = "ERROR"
         result.message = str(e)
         return result
+
+
+def _emit_full_scan_progress(
+    progress_callback: Callable[[str], None] | None, stage: str
+) -> None:
+    """Report a Full Scan stage without letting callback errors break the scan."""
+    if progress_callback is None:
+        return
+    try:
+        progress_callback(stage)
+    except Exception:
+        pass
+
+
+def _is_browser_unavailable(browser_result: ScanResult | None) -> bool:
+    """Detect the browser-unavailable contract without broadening it.
+
+    Only the dedicated UNAVAILABLE path counts: the standard unavailable
+    message or a Scan Coverage footprint entry recording unavailability.
+    Ordinary coverage notes, warnings, and partial-source findings do not.
+    """
+    if not isinstance(browser_result, ScanResult):
+        return False
+    if browser_result.scan_type != "Browser":
+        return False
+    if (browser_result.message or "").startswith(_BROWSER_UNAVAILABLE_MESSAGE):
+        return True
+    for item in browser_result.footprint_data or []:
+        if item.subcategory == "Scan Coverage" and str(item.value).startswith(
+            "Unavailable:"
+        ):
+            return True
+    return False
+
+
+async def run_full_scan(
+    file_path: str | None = None,
+    progress_callback: Callable[[str], None] | None = None,
+) -> ScanResult:
+    """Coordinate local footprint modules into one unified ScanResult.
+
+    Includes System and Browser always, plus File & Metadata only when
+    an explicit file path was selected. Email/Username public lookups
+    are intentionally excluded. Each module is isolated so one failure
+    cannot erase successful results.
+    """
+    module_results: dict[str, ScanResult] = {}
+
+    _emit_full_scan_progress(progress_callback, "Starting System scan...")
+    try:
+        module_results["system"] = await run_system_scan()
+    except Exception as exc:
+        module_results["system"] = ScanResult(
+            scan_id=str(uuid.uuid4()),
+            analysis_mode="My Footprint",
+            scan_type="System",
+            scan_category="System Footprint",
+            status="ERROR",
+            message=str(exc) or "System scan failed.",
+        )
+
+    _emit_full_scan_progress(progress_callback, "Starting Browser scan...")
+    try:
+        module_results["browser"] = await run_browser_scan()
+    except Exception as exc:
+        module_results["browser"] = ScanResult(
+            scan_id=str(uuid.uuid4()),
+            analysis_mode="My Footprint",
+            scan_type="Browser",
+            scan_category="Browser Footprint",
+            status="ERROR",
+            message=str(exc) or "Browser scan failed.",
+        )
+
+    normalized_path = (file_path or "").strip()
+    file_included = bool(normalized_path)
+    if file_included:
+        _emit_full_scan_progress(progress_callback, "Starting File scan...")
+        try:
+            module_results["file"] = await run_file_metadata_scan(normalized_path)
+        except Exception as exc:
+            module_results["file"] = ScanResult(
+                scan_id=str(uuid.uuid4()),
+                analysis_mode="My Footprint",
+                scan_type="File & Metadata",
+                scan_category="File & Metadata Footprint",
+                status="ERROR",
+                message=str(exc) or "File scan failed.",
+            )
+
+    _emit_full_scan_progress(progress_callback, "Aggregating Full Scan results...")
+    combined = FindingsProcessor.process_module_results(module_results)
+    combined.analysis_mode = "Full Footprint Analysis"
+    combined.scan_type = "Full Scan"
+    combined.scan_category = "Unified Footprint"
+
+    # Approved Full Scan status policy: a PARTIAL module result or an
+    # unavailable Browser downgrades an otherwise COMPLETED aggregate to
+    # PARTIAL. ERROR handling (PARTIAL on mixed, ERROR on total failure)
+    # already comes from the canonical aggregator and is left untouched.
+    partial_modules = sorted(
+        name
+        for name, res in module_results.items()
+        if isinstance(res, ScanResult) and res.status == "PARTIAL"
+    )
+    browser_unavailable = _is_browser_unavailable(module_results.get("browser"))
+    if browser_unavailable:
+        detail = (
+            module_results["browser"].message or _BROWSER_UNAVAILABLE_MESSAGE
+        )
+        combined.findings = FindingsProcessor.deduplicate_findings(
+            [
+                *combined.findings,
+                Finding(
+                    finding_id=str(uuid.uuid4()),
+                    finding_type="Scan Limitation",
+                    title="Module Limitation: Browser",
+                    description=(
+                        "The browser scan encountered an issue: " f"{detail}"
+                    ),
+                    evidence=[detail],
+                    severity="Info",
+                    status="Limitation",
+                ),
+            ]
+        )
+        combined.findings.sort(
+            key=lambda f: (
+                -_get_severity_rank(f.severity),
+                (f.finding_type or "").strip().lower(),
+                (f.title or "").strip().lower(),
+            )
+        )
+    if combined.status == "COMPLETED" and (partial_modules or browser_unavailable):
+        reasons = []
+        if partial_modules:
+            reasons.append(f"partial results in: {', '.join(partial_modules)}")
+        if browser_unavailable:
+            reasons.append("browser footprint unavailable on this platform")
+        combined.status = "PARTIAL"
+        combined.message = (
+            f"{combined.message or ''} "
+            f"Full Scan completed with limitations ({'; '.join(reasons)})."
+        ).strip()
+
+    if not file_included:
+        suffix = " File scan skipped — no file selected."
+        combined.message = f"{combined.message or ''}{suffix}".strip()
+    return combined
 
