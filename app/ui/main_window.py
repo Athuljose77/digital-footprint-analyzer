@@ -1,11 +1,18 @@
 import os
 import html
+from datetime import datetime
+
 from PySide6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QLineEdit, QComboBox,
-    QTextEdit, QTextBrowser, QStackedWidget, QListWidget, QTabWidget, QFileDialog
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
+    QPushButton, QLabel, QLineEdit, QComboBox, QDialog, QFrame,
+    QTextEdit, QTextBrowser, QStackedWidget, QListWidget, QTabWidget,
+    QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
+    QListWidgetItem
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtGui import QColor
+from app.ui.icons import icon, pixmap
+from app.ui.theme import R
 from app.ui.workers import ScanWorker
 
 
@@ -224,7 +231,7 @@ COVERAGE_DESCRIPTION_PREVIEW_LIMIT = 8
 def filter_note_html(matched, total):
     """Shared "N of M records" match note for filtered evidence views."""
     return (
-        f'<div style="font-size: 12px; color: #586069; margin-bottom: 8px;">'
+        f'<div style="font-size: 12px; color: {R('muted')}; margin-bottom: 8px;">'
         f'Filter matched <b>{matched}</b> of <b>{total}</b> records.</div>'
     )
 
@@ -297,14 +304,14 @@ def format_evidence_record_html(subcategory, value, source, view_key=None,
     """
     headline, visible, hidden = parse_evidence_record(subcategory, value)
     source_html = (
-        f' <span style="color: #888; font-size: 11px;">[Source: {html.escape(str(source))}]</span>'
+        f' <span style="color: {R('faint')}; font-size: 11px;">[Source: {html.escape(str(source))}]</span>'
         if source else ""
     )
     if " — " in headline and not headline_color:
         name_part, rest_part = headline.split(" — ", 1)
         headline_open = (
             f'<b>{html.escape(name_part)}</b>'
-            f'<span style="color: #586069;"> — {html.escape(rest_part)}</span>'
+            f'<span style="color: {R('muted')};"> — {html.escape(rest_part)}</span>'
         )
     elif headline_color:
         headline_open = (
@@ -325,30 +332,30 @@ def format_evidence_record_html(subcategory, value, source, view_key=None,
 
     lines = [
         f'<div style="font-size: 12px; margin-bottom: 2px; word-break: break-all;">'
-        f'<span style="color: #0366d6;">{html.escape(marker)}</span> {headline_open}{source_html}</div>'
+        f'<span style="color: {R('link')};">{html.escape(marker)}</span> {headline_open}{source_html}</div>'
     ]
     for detail in visible:
-        lines.append(_detail_div(detail, "#586069"))
+        lines.append(_detail_div(detail, f"{R('muted')}"))
     if hidden:
         if expanded:
             for detail in hidden:
-                lines.append(_detail_div(detail, "#24292e"))
+                lines.append(_detail_div(detail, f"{R('text')}"))
             if view_key is not None and record_key is not None:
                 lines.append(
                     f'<div style="font-size: 11px; margin: 0 0 3px 14px;">'
-                    f'<a href="#evd-{view_key}-{record_key}-hide" style="color: #0366d6;">'
+                    f'<a href="#evd-{view_key}-{record_key}-hide" style="color: {R('link')};">'
                     f'Hide details</a></div>'
                 )
         elif view_key is not None and record_key is not None:
             lines.append(
                 f'<div style="font-size: 11px; margin: 0 0 3px 14px;">'
-                f'<a href="#evd-{view_key}-{record_key}-show" style="color: #0366d6;">'
+                f'<a href="#evd-{view_key}-{record_key}-show" style="color: {R('link')};">'
                 f'Details</a></div>'
             )
         else:
             for detail in hidden:
                 lines.append(
-                    f'<div style="font-size: 11px; color: #586069; margin: 0 0 2px 14px; '
+                    f'<div style="font-size: 11px; color: {R('muted')}; margin: 0 0 2px 14px; '
                     f'word-break: break-all;">{html.escape(detail)}</div>'
                 )
     return "\n".join(lines)
@@ -366,13 +373,13 @@ def format_evidence_group_open(title_html, count, view_key=None, group_key=None,
         if collapsed:
             return (
                 f'{title_html} '
-                f'<a href="#evd-{view_key}-g-{group_key}-show" style="color: #0366d6; '
+                f'<a href="#evd-{view_key}-g-{group_key}-show" style="color: {R('link')}; '
                 f'font-size: 11px; font-weight: normal;">Expand ({count} records hidden)</a>',
                 False,
             )
         return (
             f'{title_html} '
-            f'<a href="#evd-{view_key}-g-{group_key}-hide" style="color: #0366d6; '
+            f'<a href="#evd-{view_key}-g-{group_key}-hide" style="color: {R('link')}; '
             f'font-size: 11px; font-weight: normal;">Collapse</a>',
             True,
         )
@@ -390,7 +397,7 @@ def format_finding_evidence_html(evidence, preview_limit=FINDING_EVIDENCE_PREVIE
     """
     items = collect_finding_evidence_items(evidence)
     if not items:
-        return '<div style="font-size: 11px; color: #6a737d; font-style: italic;">No evidence recorded.</div>'
+        return f'<div style="font-size: 11px; color: {R("faint_meta")}; font-style: italic;">No evidence recorded.</div>'
 
     if expanded or len(items) <= preview_limit:
         shown = items
@@ -400,26 +407,26 @@ def format_finding_evidence_html(evidence, preview_limit=FINDING_EVIDENCE_PREVIE
     for item in shown:
         lines.append(
             f'<div style="font-size: 11px; margin-bottom: 2px; word-break: break-all;">'
-            f'<span style="color: #0366d6;">•</span> {html.escape(item)}</div>'
+            f'<span style="color: {R('link')};">•</span> {html.escape(item)}</div>'
         )
     remaining = len(items) - len(shown)
     if card_index is not None and (remaining > 0 or expanded):
         if expanded:
             lines.append(
                 f'<div style="font-size: 11px; margin-top: 4px;">'
-                f'<a href="#ev-{card_index}-hide" style="color: #0366d6;">Show less</a>'
-                f'<span style="color: #6a737d;"> · full list also in Collected Evidence.</span></div>'
+                f'<a href="#ev-{card_index}-hide" style="color: {R('link')};">Show less</a>'
+                f'<span style="color: {R('faint_meta')};"> · full list also in Collected Evidence.</span></div>'
             )
         else:
             lines.append(
-                f'<div style="font-size: 11px; color: #6a737d; font-style: italic; margin-top: 4px;">'
+                f'<div style="font-size: 11px; color: {R('faint_meta')}; font-style: italic; margin-top: 4px;">'
                 f'+{remaining} more evidence entr{"y" if remaining == 1 else "ies"} — '
-                f'<a href="#ev-{card_index}-show" style="color: #0366d6;">Show all</a> · '
+                f'<a href="#ev-{card_index}-show" style="color: {R('link')};">Show all</a> · '
                 f'see Collected Evidence for the complete records.</div>'
             )
     elif remaining > 0:
         lines.append(
-            f'<div style="font-size: 11px; color: #6a737d; font-style: italic; margin-top: 4px;">'
+            f'<div style="font-size: 11px; color: {R('faint_meta')}; font-style: italic; margin-top: 4px;">'
             f'+{remaining} more evidence entr{"y" if remaining == 1 else "ies"} — '
             f'see Collected Evidence for the complete records.</div>'
         )
@@ -446,21 +453,50 @@ class MainWindow(QMainWindow):
         # records), reset on new results or filter changes. Presentation only.
         self._collapsed_evidence = {}
         self._expanded_evidence_records = {}
+        # Dashboard state (presentation only): bounded in-session scan
+        # history plus the latest result summary. Never affects scanning.
+        self._scan_history = []
+        self._dashboard_summary = None
 
         # Main widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
 
-        # Sidebar navigation
+        # Sidebar navigation with product branding header and footer.
+        sidebar_container = QWidget()
+        sidebar_container.setFixedWidth(170)
+        sidebar_layout = QVBoxLayout(sidebar_container)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        logo_row = QHBoxLayout()
+        self.sidebar_emblem = QLabel()
+        self.sidebar_emblem.setPixmap(pixmap("shield", 34))
+        logo_row.addWidget(self.sidebar_emblem)
+        self.sidebar_logo = QLabel("<b>Digital Footprint<br>Analyzer</b>")
+        self.sidebar_logo.setWordWrap(True)
+        logo_row.addWidget(self.sidebar_logo, stretch=1)
+        logo_widget = QWidget()
+        logo_widget.setLayout(logo_row)
+        logo_widget.setStyleSheet("padding: 12px 8px 4px 8px;")
+        sidebar_layout.addWidget(logo_widget)
         self.sidebar = QListWidget()
-        self.sidebar.setFixedWidth(150)
-        self.sidebar.addItem("Home")
-        self.sidebar.addItem("My Footprint")
-        self.sidebar.addItem("Public Lookup")
-        self.sidebar.addItem("Settings")
+        self.sidebar.setIconSize(QSize(20, 20))
+        for label, icon_name in (
+            ("Home", "home"),
+            ("My Footprint", "search"),
+            ("Public Lookup", "globe"),
+            ("Settings", "gear"),
+        ):
+            item = QListWidgetItem(icon(icon_name), label)
+            self.sidebar.addItem(item)
         self.sidebar.currentRowChanged.connect(self.change_page)
-        main_layout.addWidget(self.sidebar)
+        sidebar_layout.addWidget(self.sidebar, stretch=1)
+        self.sidebar_tagline = QLabel("Your privacy.<br>Your control.")
+        self.sidebar_tagline.setWordWrap(True)
+        self.sidebar_tagline.setStyleSheet(
+            "color: #75808c; padding: 4px 8px 12px 8px;")
+        sidebar_layout.addWidget(self.sidebar_tagline)
+        main_layout.addWidget(sidebar_container)
 
         # Stacked widget for pages
         self.pages = QStackedWidget()
@@ -472,15 +508,423 @@ class MainWindow(QMainWindow):
         self.init_public_lookup_page()
         self.init_settings_page()
 
-        self.sidebar.setCurrentRow(2)  # Default to Public Lookup
+        self.sidebar.setCurrentRow(0)  # Default to the Home dashboard
 
     def init_home_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(QLabel("<h2>Welcome to Digital Footprint Analyzer</h2>"))
-        layout.addWidget(QLabel("A privacy and security awareness application to analyze local traces and public digital exposure."))
-        layout.addStretch()
+        page = QScrollArea()
+        page.setWidgetResizable(True)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+
+        hero_row = QHBoxLayout()
+        hero = QLabel(
+            f"<div style='font-size: 13px; color: {R('muted')};'>Welcome to</div>"
+            f"<div style='font-size: 24px; font-weight: bold;'>Digital Footprint "
+            f"<span style='color: #2dd4bf;'>Analyzer</span></div>"
+            f"<div style='font-size: 12px; color: {R('muted')};'>Understand your digital "
+            "footprint. Keep your data in your hands.</div>"
+        )
+        hero.setWordWrap(True)
+        hero_row.addWidget(hero, stretch=1)
+        self.hero_emblem = QLabel()
+        self.hero_emblem.setAlignment(Qt.AlignCenter)
+        self.hero_emblem.setFixedSize(84, 84)
+        self.hero_emblem.setPixmap(pixmap("fingerprint", 76))
+        self.hero_emblem.setStyleSheet(
+            "border: 2px solid #2dd4bf; border-radius: 42px; padding: 4px;"
+        )
+        hero_row.addWidget(self.hero_emblem)
+        self.hero_tagline = QLabel(
+            "ANALYZE<br>DISCOVER<br>STAY INFORMED<br>STAY IN CONTROL"
+        )
+        self.hero_tagline.setStyleSheet(
+            f"font-size: 10px; color: {R('muted')};")
+        hero_row.addWidget(self.hero_tagline)
+        layout.addLayout(hero_row)
+
+        cards_row = QHBoxLayout()
+        self.home_cards = {}
+        self.home_card_frames = {}
+        for key, title, description, icon_name in (
+            ("system", "System Footprint",
+             "Discover installed applications, running processes, startup items and other system information.",
+             "monitor"),
+            ("browser", "Browser Footprint",
+             "Analyze browser data, extensions, profiles and stored information.",
+             "globe"),
+            ("file", "File Metadata",
+             "Inspect metadata from selected files.",
+             "document"),
+            ("full", "Full Scan",
+             "Run system and browser scans together for a complete overview.",
+             "target"),
+        ):
+            card, action_btn = self._make_scan_card(title, description, icon_name)
+            cards_row.addWidget(card, stretch=1)
+            self.home_cards[key] = action_btn
+            self.home_card_frames[key] = card
+        layout.addLayout(cards_row)
+        self.home_cards["system"].clicked.connect(self._start_dashboard_system)
+        self.home_cards["browser"].clicked.connect(self._start_dashboard_browser)
+        self.home_cards["file"].clicked.connect(self._start_dashboard_file)
+        self.home_cards["full"].clicked.connect(self._start_dashboard_full)
+
+        middle_row = QHBoxLayout()
+        overview_box = QVBoxLayout()
+        overview_header = QHBoxLayout()
+        overview_header.addWidget(QLabel("<b>Footprint Overview</b>"))
+        overview_header.addStretch()
+        self.overview_scan_combo = QComboBox()
+        self.overview_scan_combo.addItem("Last Scan")
+        self.overview_scan_combo.currentIndexChanged.connect(
+            self._on_overview_scan_changed)
+        overview_header.addWidget(self.overview_scan_combo)
+        overview_box.addLayout(overview_header)
+        overview_sub = QLabel("A summary of the last scan results.")
+        overview_sub.setStyleSheet(f"color: {R('muted')};")
+        overview_sub.setWordWrap(True)
+        overview_box.addWidget(overview_sub)
+        self.dashboard_overview = QTextBrowser()
+        self.dashboard_overview.setOpenLinks(False)
+        self.dashboard_overview.setReadOnly(True)
+        self.dashboard_overview.setMinimumHeight(220)
+        overview_box.addWidget(self.dashboard_overview, stretch=1)
+        middle_row.addLayout(overview_box, stretch=3)
+
+        checklist_box = QVBoxLayout()
+        checklist_box.addWidget(QLabel("<b>Privacy Checklist</b>"))
+        checklist_sub = QLabel("Simple steps to improve your privacy and reduce your exposure.")
+        checklist_sub.setStyleSheet(f"color: {R('muted')};")
+        checklist_sub.setWordWrap(True)
+        checklist_box.addWidget(checklist_sub)
+        for title, sub, tab_index, row_icon in (
+            ("Review startup applications", "Disable applications you no longer need.", 0, "shield"),
+            ("Check browser extensions", "Remove unnecessary or unfamiliar extensions.", 1, "globe"),
+            ("Be mindful when sharing files", "Metadata can reveal more information than you might expect.", 2, "document"),
+        ):
+            row = QFrame()
+            row.setFrameShape(QFrame.NoFrame)
+            row.setStyleSheet(
+                f"QFrame {{ background-color: {R('panel_bg')}; "
+                f"border: 1px solid {R('panel_border')}; border-radius: 6px; }}"
+            )
+            row_layout = QHBoxLayout(row)
+            row_icon_label = QLabel()
+            row_icon_label.setPixmap(pixmap(row_icon, 26))
+            row_layout.addWidget(row_icon_label)
+            text = QLabel(f"<b>{html.escape(title)}</b><br>"
+                          f"<span style='color: {R("muted")};'>{html.escape(sub)}</span>")
+            text.setWordWrap(True)
+            row_layout.addWidget(text, stretch=1)
+            go_btn = QPushButton("›")
+            go_btn.setFixedSize(28, 28)
+            go_btn.setStyleSheet(
+                "border: 1px solid #2dd4bf; border-radius: 14px; "
+                "font-size: 15px; font-weight: bold; color: #2dd4bf;"
+            )
+            go_btn.clicked.connect(
+                lambda _checked=False, tab=tab_index: self._goto_my_footprint_tab(tab)
+            )
+            row_layout.addWidget(go_btn)
+            checklist_box.addWidget(row)
+        tip = QLabel("<i>Tip: Run a Full Scan periodically to get a complete "
+                     "overview of your digital footprint.</i>")
+        tip.setWordWrap(True)
+        tip.setStyleSheet(f"color: {R('muted')};")
+        checklist_box.addWidget(tip)
+        checklist_box.addStretch()
+        middle_row.addLayout(checklist_box, stretch=2)
+        layout.addLayout(middle_row)
+
+        recent_row = QHBoxLayout()
+        recent_row.addWidget(QLabel("<b>Recent Scans</b>"))
+        recent_row.addStretch()
+        self.view_all_scans_btn = QPushButton("View All Scans ›")
+        self.view_all_scans_btn.clicked.connect(self._open_history_dialog)
+        recent_row.addWidget(self.view_all_scans_btn)
+        layout.addLayout(recent_row)
+        self.recent_scans_table = QTableWidget(0, 6)
+        self.recent_scans_table.setHorizontalHeaderLabels(
+            ["Date & Time", "Scan Type", "Modules", "Findings", "Evidence Items", "Status"]
+        )
+        self.recent_scans_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.recent_scans_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.recent_scans_table.setSelectionMode(QTableWidget.NoSelection)
+        self.recent_scans_table.setMaximumHeight(180)
+        layout.addWidget(self.recent_scans_table)
+
+        page.setWidget(content)
         self.pages.addWidget(page)
+        self.dashboard_overview.setHtml(self._format_dashboard_overview_html())
+
+    def _make_scan_card(self, title, description, icon_name="target"):
+        card = QFrame()
+        # NoFrame: the native panel frame plus the stylesheet border rendered
+        # as an ugly double box, so only the stylesheet border is used.
+        card.setFrameShape(QFrame.NoFrame)
+        card.setStyleSheet(
+            f"QFrame {{ background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; "
+            "border-radius: 8px; }"
+        )
+        card_layout = QVBoxLayout(card)
+        icon_label = QLabel()
+        icon_label.setPixmap(pixmap(icon_name, 30))
+        card_layout.addWidget(icon_label)
+        title_label = QLabel(f"<b>{html.escape(title)}</b>")
+        title_label.setWordWrap(True)
+        card_layout.addWidget(title_label)
+        desc_label = QLabel(html.escape(description))
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet(f"color: {R('muted')};")
+        desc_label.setAlignment(Qt.AlignTop)
+        card_layout.addWidget(desc_label, stretch=1)
+        action_btn = QPushButton("›")
+        action_btn.setFixedSize(36, 36)
+        action_btn.setStyleSheet(
+            "border: 1px solid #2dd4bf; border-radius: 18px; "
+            "font-size: 18px; font-weight: bold; color: #2dd4bf;"
+        )
+        card_layout.addWidget(action_btn, alignment=Qt.AlignRight)
+        return card, action_btn
+
+    def _goto_my_footprint_tab(self, index):
+        self.sidebar.setCurrentRow(1)
+        self.my_footprint_tabs.setCurrentIndex(index)
+
+    def _start_dashboard_system(self):
+        self._goto_my_footprint_tab(0)
+        self.start_system_scan()
+
+    def _start_dashboard_browser(self):
+        self._goto_my_footprint_tab(1)
+        self.start_browser_scan()
+
+    def _start_dashboard_file(self):
+        self._goto_my_footprint_tab(2)
+
+    def _start_dashboard_full(self):
+        self._goto_my_footprint_tab(3)
+        self.start_full_scan()
+
+    def _record_dashboard_entry(self, result):
+        """Build a session history entry from a finished ScanResult.
+
+        Presentation-only: findings/evidence counts and module labels are
+        read straight from the result. History is bounded in memory and
+        never persisted.
+        """
+        scan_type = result.scan_type or "Unknown"
+        summary = self._dashboard_summary_for(result)
+        if scan_type == "Full Scan":
+            attempted = [m for m in summary["modules"] if m["state"] != "skipped"]
+            done = [m for m in attempted if m["state"] == "completed"]
+            modules_label = " + ".join(m["name"] for m in attempted) or scan_type
+            modules_count = f"{len(done)} / {len(attempted)}" if attempted else "0 / 0"
+        else:
+            modules_label = scan_type
+            modules_count = "1 / 1"
+        return {
+            "time": datetime.now().strftime("%d %b %Y, %I:%M %p"),
+            "scan_type": scan_type,
+            "modules": modules_label,
+            "modules_count": modules_count,
+            "findings": len(result.findings or []),
+            "evidence": len(result.footprint_data or []),
+            "status": (result.status or "").strip().upper(),
+            "severity_counts": dict(summary["severity_counts"]),
+            "module_rows": [dict(m) for m in summary["modules"]],
+        }
+
+    def _dashboard_summary_for(self, result):
+        """Build the overview model for any finished scan.
+
+        Full Scan reuses the shared display adapter; individual scans get a
+        single-module row derived from their own status. Read-only.
+        """
+        if result.scan_type == "Full Scan":
+            return summarize_full_scan(result)
+        status = (result.status or "").strip().upper()
+        state = ("completed" if status == "COMPLETED"
+                 else "limited" if status in ("PARTIAL", "ERROR") else "unknown")
+        note = {"completed": "Completed", "limited": "Had limitations — see scan output",
+                "unknown": "No data"}[state]
+        severity_counts = {sev: 0 for sev in SEVERITY_ORDER}
+        for f in result.findings or []:
+            sev = (f.severity or "Info").strip().capitalize()
+            severity_counts[sev] = severity_counts.get(sev, 0) + 1
+        return {
+            "status": status,
+            "status_guidance": SCAN_STATUS_GUIDANCE.get(status, ""),
+            "total_findings": len(result.findings or []),
+            "severity_counts": severity_counts,
+            "evidence_records": len(result.footprint_data or []),
+            "modules": [{"name": result.scan_type or "Unknown",
+                         "state": state, "note": note}],
+        }
+
+    def _refresh_dashboard(self, result):
+        """Fold a finished scan into the dashboard history and re-render."""
+        self._dashboard_summary = self._dashboard_summary_for(result)
+        self._scan_history.insert(0, self._record_dashboard_entry(result))
+        del self._scan_history[20:]
+        self.overview_scan_combo.blockSignals(True)
+        self.overview_scan_combo.clear()
+        self.overview_scan_combo.addItem("Last Scan")
+        for entry in self._scan_history:
+            self.overview_scan_combo.addItem(
+                f'{entry["time"]} — {entry["scan_type"]}')
+        self.overview_scan_combo.blockSignals(False)
+        self.dashboard_overview.setHtml(self._format_dashboard_overview_html())
+        self._populate_history_table(self.recent_scans_table, self._scan_history[:5])
+
+    def _summary_from_entry(self, entry):
+        """Rebuild an overview model from a stored history entry."""
+        return {
+            "status": entry["status"],
+            "status_guidance": SCAN_STATUS_GUIDANCE.get(entry["status"], ""),
+            "total_findings": entry["findings"],
+            "severity_counts": dict(entry["severity_counts"]),
+            "evidence_records": entry["evidence"],
+            "modules": [dict(m) for m in entry["module_rows"]],
+        }
+
+    def _on_overview_scan_changed(self, index):
+        # Index 0 ("Last Scan") shows the latest summary; any other index
+        # shows that session entry's stored summary. Read-only throughout.
+        if index <= 0 or not self._scan_history:
+            summary = self._dashboard_summary
+        elif index - 1 < len(self._scan_history):
+            summary = self._summary_from_entry(self._scan_history[index - 1])
+        else:
+            return
+        if summary is None:
+            return
+        self.dashboard_overview.setHtml(
+            self._format_dashboard_overview_html(summary))
+
+    def _format_dashboard_overview_html(self, summary=None):
+        """Render the overview panel from a dashboard summary model."""
+        if summary is None:
+            summary = self._dashboard_summary
+        if summary is None:
+            return (
+                '<div style="font-family: sans-serif; padding: 4px; font-size: 12px; '
+                f'color: {R("muted")};">Run a scan to analyze your digital footprint. '
+                'Results from System, Browser, File, Full Scan, and Public Lookup '
+                'scans appear here.</div>'
+            )
+        counts = summary["severity_counts"]
+        peak = max(counts.values()) if counts else 0
+        bar_colors = {
+            "Critical": f"{R('sev_critical')}", "High": f"{R('sev_medium')}", "Medium": f"{R('chart_medium')}",
+            "Low": f"{R('sev_low')}", "Info": f"{R('link')}",
+        }
+        bars = []
+        for sev in SEVERITY_ORDER:
+            count = counts.get(sev, 0)
+            height = 6 if not peak else 6 + round(54 * count / peak)
+            bars.append(
+                f'<td align="center" valign="bottom" style="padding: 0 6px;">'
+                f'<div style="font-size: 11px; font-weight: bold; color: {R('text')};">{count}</div>'
+                f'<div style="width: 28px; height: {height}px; '
+                f'background-color: {bar_colors.get(sev, f"{R('link')}")}; '
+                f'border-radius: 3px 3px 0 0;">&nbsp;</div>'
+                f'<div style="font-size: 11px; color: {R('muted')};">{html.escape(sev)}</div>'
+                f'</td>'
+            )
+        state_marks = {"completed": (f"{R('ok_text')}", "✓"), "limited": (f"{R('warn_text')}", "⚠"),
+                       "failed": (f"{R('err_text')}", "✕"), "skipped": (f"{R('muted')}", "⊘"),
+                       "unknown": (f"{R('faint_alt')}", "?")}
+        module_lines = []
+        for mod in summary.get("modules", []):
+            color, mark = state_marks.get(mod.get("state", "unknown"), (f"{R('faint_alt')}", "?"))
+            module_lines.append(
+                f'<div style="font-size: 12px; margin-bottom: 2px; color: {R('text_alt')};">'
+                f'<span style="color: {color}; font-weight: bold;">{mark}</span> '
+                f'<b>{html.escape(mod.get("name", "?"))}:</b> '
+                f'{html.escape(mod.get("note", ""))}</div>'
+            )
+        modules_html = f"""
+          <div style="font-weight: bold; font-size: 12px; margin: 8px 0 4px;">Modules:</div>
+          {"".join(module_lines)}
+        """ if module_lines else ""
+        status = summary["status"]
+        status_color = {"COMPLETED": f"{R('ok_text')}", "PARTIAL": f"{R('warn_text')}",
+                        "ERROR": f"{R('err_text')}"}.get(status, f"{R('muted')}")
+        critical = counts.get("Critical", 0)
+        status_note = (f"{critical} critical need attention" if critical
+                       else "No critical issues")
+        modules = summary.get("modules", [])
+        if len(modules) > 1:
+            attempted = [m for m in modules if m["state"] != "skipped"]
+            done = [m for m in attempted if m["state"] == "completed"]
+            modules_count = f"{len(done)} / {len(attempted)}" if attempted else "0 / 0"
+            modules_label = " + ".join(m["name"] for m in attempted) or "—"
+        else:
+            modules_count = "1 / 1"
+            modules_label = modules[0]["name"] if modules else "—"
+        return f"""
+        <div style="font-family: sans-serif; padding: 4px;">
+          <table width="100%" cellpadding="6" cellspacing="6" style="font-size: 12px; color: {R('text_alt')};">
+            <tr>
+              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};"><b>Total Findings</b><br>
+                <span style="font-size: 18px; font-weight: bold;">{summary["total_findings"]}</span><br>
+                <span style="font-size: 11px; color: {R('muted')};">collected findings</span></td>
+              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};"><b>Evidence Items</b><br>
+                <span style="font-size: 18px; font-weight: bold;">{summary["evidence_records"]:,}</span><br>
+                <span style="font-size: 11px; color: {R('muted')};">collected records</span></td>
+              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};"><b>Modules Scanned</b><br>
+                <span style="font-size: 18px; font-weight: bold;">{html.escape(modules_count)}</span><br>
+                <span style="font-size: 11px; color: {R('muted')};">{html.escape(modules_label)}</span></td>
+              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};"><b>Scan Status</b><br>
+                <span style="font-size: 18px; font-weight: bold; color: {status_color};">{html.escape(status or "—")}</span><br>
+                <span style="font-size: 11px; color: {R('muted')};">{html.escape(status_note)}</span></td>
+            </tr>
+          </table>
+          <div style="font-weight: bold; font-size: 12px; margin: 8px 0 4px;">Findings by severity</div>
+          <table cellpadding="0" cellspacing="0"><tr>{"".join(bars)}</tr></table>
+          {modules_html}
+        </div>
+        """
+
+    def _populate_history_table(self, table, entries):
+        """Fill a history table from session entries (newest first)."""
+        table.setRowCount(len(entries))
+        status_colors = {"COMPLETED": f"{R('ok_text')}", "PARTIAL": f"{R('warn_text')}", "ERROR": f"{R('err_text')}"}
+        for row, entry in enumerate(entries):
+            values = [entry["time"], entry["scan_type"], entry["modules"],
+                      str(entry["findings"]), f'{entry["evidence"]:,}',
+                      entry["status"]]
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col == 5 and value in status_colors:
+                    item.setForeground(QColor(status_colors[value]))
+                table.setItem(row, col, item)
+
+    def _build_history_dialog(self):
+        """Build (but do not execute) the full session-history dialog."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Scan History — This Session")
+        dialog.resize(720, 320)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Scans run in this session (newest first). "
+                                "History is kept in memory only."))
+        table = QTableWidget(0, 6)
+        table.setHorizontalHeaderLabels(
+            ["Date & Time", "Scan Type", "Modules", "Findings", "Evidence Items", "Status"]
+        )
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setSelectionMode(QTableWidget.NoSelection)
+        self._populate_history_table(table, self._scan_history)
+        layout.addWidget(table)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignRight)
+        return dialog
+
+    def _open_history_dialog(self):
+        self._build_history_dialog().exec()
 
     def init_my_footprint_page(self):
         page = QWidget()
@@ -630,7 +1074,7 @@ class MainWindow(QMainWindow):
         file_select_row.addWidget(self.file_select_btn)
 
         self.selected_file_label = QLabel("No file selected")
-        self.selected_file_label.setStyleSheet("color: #888;")
+        self.selected_file_label.setStyleSheet(f"color: {R('faint')};")
         file_select_row.addWidget(self.selected_file_label, stretch=1)
 
         self.file_analyze_btn = QPushButton("Analyze File")
@@ -707,7 +1151,7 @@ class MainWindow(QMainWindow):
         full_file_row.addWidget(self.full_scan_select_btn)
 
         self.full_scan_file_label = QLabel("No file selected")
-        self.full_scan_file_label.setStyleSheet("color: #888;")
+        self.full_scan_file_label.setStyleSheet(f"color: {R('faint')};")
         full_file_row.addWidget(self.full_scan_file_label, stretch=1)
 
         self.full_scan_clear_btn = QPushButton("Clear")
@@ -892,7 +1336,7 @@ class MainWindow(QMainWindow):
         if file_path:
             self.selected_file_path = file_path
             self.selected_file_label.setText(os.path.basename(file_path))
-            self.selected_file_label.setStyleSheet("color: #000; font-weight: bold;")
+            self.selected_file_label.setStyleSheet(f"color: {R('black_text')}; font-weight: bold;")
             self.file_analyze_btn.setEnabled(True)
             self.file_status_label.setText("File selected. Click 'Analyze File' to extract metadata.")
             self.file_findings_area.clear()
@@ -936,14 +1380,14 @@ class MainWindow(QMainWindow):
         if file_path:
             self.full_scan_file_path = file_path
             self.full_scan_file_label.setText(os.path.basename(file_path))
-            self.full_scan_file_label.setStyleSheet("color: #000; font-weight: bold;")
+            self.full_scan_file_label.setStyleSheet(f"color: {R('black_text')}; font-weight: bold;")
             self.full_scan_clear_btn.setEnabled(True)
             self.full_scan_status_label.setText("File selected. Click 'Run Full Scan' to include it; otherwise System and Browser scans run without File Metadata.")
 
     def clear_full_scan_file(self):
         self.full_scan_file_path = None
         self.full_scan_file_label.setText("No file selected")
-        self.full_scan_file_label.setStyleSheet("color: #888;")
+        self.full_scan_file_label.setStyleSheet(f"color: {R('faint')};")
         self.full_scan_clear_btn.setEnabled(False)
 
     def start_full_scan(self):
@@ -1145,9 +1589,9 @@ class MainWindow(QMainWindow):
         if query or subcategories is not None or exclude is not None:
             body = filter_note_html(len(visible), len(footprint)) + body
         if not visible and footprint:
-            body += ('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; '
+            body += (f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; '
                      'border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; '
-                     'color: #666;">No records match the current filter. Clear the search '
+                     f'color: {R("subtle")};">No records match the current filter. Clear the search '
                      'or choose a different group to see more evidence.</div>')
         area.setHtml(body)
 
@@ -1200,17 +1644,17 @@ class MainWindow(QMainWindow):
         status_banner = ""
         if scan_status:
             status_styles = {
-                "COMPLETED": ("#22863a", "#e6f4ea", "#b7e0c3"),
-                "PARTIAL": ("#b04300", "#fff5e6", "#f0c48c"),
-                "ERROR": ("#cb2431", "#ffeef0", "#f5b5ba"),
+                "COMPLETED": (f"{R('ok_text')}", f"{R('ok_bg')}", f"{R('ok_border')}"),
+                "PARTIAL": (f"{R('warn_text')}", f"{R('warn_bg')}", f"{R('warn_border')}"),
+                "ERROR": (f"{R('err_text')}", f"{R('err_bg')}", f"{R('err_border')}"),
             }
             status_key = str(scan_status).strip().upper()
             text_color, bg_color, border_color = status_styles.get(
-                status_key, ("#586069", "#f6f8fa", "#e1e4e8")
+                status_key, (f"{R('muted')}", f"{R('panel_bg_alt')}", f"{R('panel_border')}")
             )
             guidance = SCAN_STATUS_GUIDANCE.get(status_key, "")
             guidance_html = (
-                f'<span style="color: #586069;"> — {html.escape(guidance)}</span>'
+                f'<span style="color: {R('muted')};"> — {html.escape(guidance)}</span>'
                 if guidance else ""
             )
             status_banner = f"""
@@ -1225,8 +1669,8 @@ class MainWindow(QMainWindow):
         for sev in SEVERITY_ORDER:
             count = severity_counts.get(sev, 0)
             chip_style = (
-                "background-color: #e1e4e8; color: #24292e;"
-                if count else "background-color: #f6f8fa; color: #959da5;"
+                f"background-color: {R('panel_border')}; color: {R('text')};"
+                if count else f"background-color: {R('panel_bg_alt')}; color: {R('faint_alt')};"
             )
             severity_chips.append(
                 f'<span style="{chip_style} font-weight: bold; padding: 2px 6px; '
@@ -1234,7 +1678,7 @@ class MainWindow(QMainWindow):
                 f'{html.escape(sev)}: {count}</span>'
             )
         severity_row = f"""
-        <div style="font-family: sans-serif; margin-bottom: 8px; font-size: 12px; color: #333;">
+        <div style="font-family: sans-serif; margin-bottom: 8px; font-size: 12px; color: {R('text_alt')};">
             <b>By severity:</b> {"&nbsp;&nbsp;".join(severity_chips)}
         </div>
         """
@@ -1243,26 +1687,26 @@ class MainWindow(QMainWindow):
         module_rows = ""
         if summary and summary.get("modules"):
             state_styles = {
-                "completed": ("#22863a", "✓"),
-                "limited": ("#b04300", "⚠"),
-                "failed": ("#cb2431", "✕"),
-                "skipped": ("#586069", "⊘"),
-                "unknown": ("#959da5", "?"),
+                "completed": (f"{R('ok_text')}", "✓"),
+                "limited": (f"{R('warn_text')}", "⚠"),
+                "failed": (f"{R('err_text')}", "✕"),
+                "skipped": (f"{R('muted')}", "⊘"),
+                "unknown": (f"{R('faint_alt')}", "?"),
             }
             row_lines = []
             for mod in summary["modules"]:
                 color, mark = state_styles.get(
-                    mod.get("state", "unknown"), ("#959da5", "?")
+                    mod.get("state", "unknown"), (f"{R('faint_alt')}", "?")
                 )
                 row_lines.append(
-                    f'<div style="font-size: 12px; margin-bottom: 2px; color: #333;">'
+                    f'<div style="font-size: 12px; margin-bottom: 2px; color: {R('text_alt')};">'
                     f'<span style="color: {color}; font-weight: bold;">{mark}</span> '
                     f'<b>{html.escape(mod.get("name", "?"))}:</b> '
                     f'{html.escape(mod.get("note", ""))}</div>'
                 )
             module_rows = f"""
-        <div style="font-family: sans-serif; margin-bottom: 12px; padding: 6px 12px; background-color: #fbfcfd; border: 1px solid #e1e4e8; border-radius: 6px;">
-            <div style="font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 4px;">Modules:</div>
+        <div style="font-family: sans-serif; margin-bottom: 12px; padding: 6px 12px; background-color: {R('card_bg')}; border: 1px solid {R('panel_border')}; border-radius: 6px;">
+            <div style="font-size: 12px; font-weight: bold; color: {R('text')}; margin-bottom: 4px;">Modules:</div>
             {"".join(row_lines)}
         </div>
         """
@@ -1271,7 +1715,7 @@ class MainWindow(QMainWindow):
         limitation_note = ""
         if limitation_count > 0:
             limitation_note = f"""
-        <div style="font-family: sans-serif; margin-bottom: 12px; padding: 6px 12px; background-color: #f6f8fa; border: 1px dotted #b1b7c0; border-radius: 6px; font-size: 11px; color: #586069;">
+        <div style="font-family: sans-serif; margin-bottom: 12px; padding: 6px 12px; background-color: {R('panel_bg_alt')}; border: 1px dotted {R('dotted_border')}; border-radius: 6px; font-size: 11px; color: {R('muted')};">
             <b>Scan Limitations ({limitation_count}):</b> notes about sources that could not be checked
             (unsupported platforms, locked profiles, or failed modules). These describe scan coverage,
             not confirmed privacy exposures.
@@ -1284,12 +1728,12 @@ class MainWindow(QMainWindow):
         {status_banner}
         {severity_row}
         {module_rows}
-        <div style="font-family: sans-serif; margin-bottom: 12px; padding: 6px 12px; background-color: #f8f9fa; border: 1px solid #e1e4e8; border-radius: 6px; font-size: 12px; color: #333; line-height: 2;">
+        <div style="font-family: sans-serif; margin-bottom: 12px; padding: 6px 12px; background-color: {R('panel_bg')}; border: 1px solid {R('panel_border')}; border-radius: 6px; font-size: 12px; color: {R('text_alt')}; line-height: 2;">
             <b>SCAN SUMMARY:</b>
-            <span style="margin-left: 8px;"><b>Total Findings:</b> <span style="background-color: #e1e4e8; color: #24292e; font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{total_findings}</span></span>
-            <span style="margin-left: 8px;"><b>Concerns:</b> <span style="background-color: #ffeef0; color: #cb2431; font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{concerns_count}</span></span>
-            <span style="margin-left: 8px;"><b>Observations:</b> <span style="background-color: #f1f8ff; color: #0366d6; font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{observations_count}</span></span>
-            <span style="margin-left: 8px;"><b>Evidence Items:</b> <span style="background-color: #f6f8fa; color: #444d56; font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{evidence_count}</span></span>
+            <span style="margin-left: 8px;"><b>Total Findings:</b> <span style="background-color: {R('panel_border')}; color: {R('text')}; font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{total_findings}</span></span>
+            <span style="margin-left: 8px;"><b>Concerns:</b> <span style="background-color: {R('err_bg')}; color: {R('err_text')}; font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{concerns_count}</span></span>
+            <span style="margin-left: 8px;"><b>Observations:</b> <span style="background-color: {R('info_bg')}; color: {R('link')}; font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{observations_count}</span></span>
+            <span style="margin-left: 8px;"><b>Evidence Items:</b> <span style="background-color: {R('panel_bg_alt')}; color: {R('chip_text')}; font-weight: bold; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{evidence_count}</span></span>
         </div>
         {limitation_note}
         """
@@ -1297,8 +1741,8 @@ class MainWindow(QMainWindow):
         if not findings:
             failure_note = ""
             if scan_status and str(scan_status).strip().upper() == "ERROR":
-                failure_note = """
-                <div style="padding: 12px; border: 1px solid #f5b5ba; border-radius: 6px; background-color: #ffeef0; color: #86181d; margin-top: 4px; font-size: 12px;">
+                failure_note = f"""
+                <div style="padding: 12px; border: 1px solid {R('err_border')}; border-radius: 6px; background-color: {R('err_bg')}; color: {R('err_text_strong')}; margin-top: 4px; font-size: 12px;">
                     <b>The scan did not complete.</b> No findings could be produced because the
                     scan itself failed — this is not a clean bill of health. Check the status
                     message for details and try running the scan again.
@@ -1308,9 +1752,9 @@ class MainWindow(QMainWindow):
             <div style="font-family: sans-serif; padding: 4px;">
                 {summary_html}
                 {failure_note}
-                <div style="padding: 16px; border: 1px dashed #7f848e; border-radius: 6px; background-color: #2b2b2b; color: #abb2bf; margin-top: 4px;">
-                    <h3 style="margin-top: 0; color: #98c379; font-size: 14px;">No findings were generated for this scan.</h3>
-                    <p style="margin-bottom: 0; font-size: 12px; color: #7f848e; line-height: 1.4;">
+                <div style="padding: 16px; border: 1px dashed {R('empty_box_muted')}; border-radius: 6px; background-color: {R('empty_box_bg')}; color: {R('empty_box_text')}; margin-top: 4px;">
+                    <h3 style="margin-top: 0; color: {R('empty_box_heading')}; font-size: 14px;">No findings were generated for this scan.</h3>
+                    <p style="margin-bottom: 0; font-size: 12px; color: {R('empty_box_muted')}; line-height: 1.4;">
                         All evaluated rule conditions were negative for positive exposure evidence.<br>
                         <i>Note: An absence of findings indicates that no supported rule conditions were met, but does not guarantee the system or identifier is free of all privacy or security exposure.</i>
                     </p>
@@ -1321,7 +1765,7 @@ class MainWindow(QMainWindow):
         cards = [
             '<div style="font-family: sans-serif; padding: 4px;">',
             summary_html,
-            f'<div style="font-weight: bold; font-size: 13px; margin-bottom: 8px; color: #333;">=== FINDINGS ({total_findings} detected) ===</div>'
+            f'<div style="font-weight: bold; font-size: 13px; margin-bottom: 8px; color: {R('text_alt')};">=== FINDINGS ({total_findings} detected) ===</div>'
         ]
 
         for card_index, f in regular:
@@ -1333,24 +1777,24 @@ class MainWindow(QMainWindow):
             # Restrained, distinct badge and border color palette
             is_concern = (cat == "Concern")
             if is_concern:
-                cat_badge_bg = "#d73a49" if sev in ("High", "Critical") else "#e36209"
-                card_border = "#d73a49" if sev in ("High", "Critical") else "#e36209"
-                card_bg = "#fff8f8" if sev in ("High", "Critical") else "#fffbf5"
-                title_color = "#cb2431" if sev in ("High", "Critical") else "#b04300"
+                cat_badge_bg = f"{R('sev_critical')}" if sev in ("High", "Critical") else f"{R('sev_medium')}"
+                card_border = f"{R('sev_critical')}" if sev in ("High", "Critical") else f"{R('sev_medium')}"
+                card_bg = f"{R('card_bg_concern_high')}" if sev in ("High", "Critical") else f"{R('card_bg_concern_med')}"
+                title_color = f"{R('err_text')}" if sev in ("High", "Critical") else f"{R('warn_text')}"
             else:
-                cat_badge_bg = "#0366d6"
-                card_border = "#0366d6"
-                card_bg = "#fbfcfd"
-                title_color = "#0366d6"
+                cat_badge_bg = f"{R('link')}"
+                card_border = f"{R('link')}"
+                card_bg = f"{R('card_bg')}"
+                title_color = f"{R('link')}"
 
             sev_colors = {
-                "Critical": "#d73a49",
-                "High": "#d73a49",
-                "Medium": "#e36209",
-                "Low": "#005cc5",
-                "Info": "#0366d6"
+                "Critical": f"{R('sev_critical')}",
+                "High": f"{R('sev_critical')}",
+                "Medium": f"{R('sev_medium')}",
+                "Low": f"{R('sev_low')}",
+                "Info": f"{R('link')}"
             }
-            sev_bg = sev_colors.get(sev, "#0366d6")
+            sev_bg = sev_colors.get(sev, f"{R('link')}")
 
             sev_guidance = SEVERITY_GUIDANCE.get(sev, f"{sev} · for awareness")
             cat_guidance = ("Potential concern" if cat == "Concern"
@@ -1366,19 +1810,19 @@ class MainWindow(QMainWindow):
                 else "Evidence:"
             )
 
-            rule_html = f'<span style="font-size: 11px; color: #6a737d; font-family: monospace;">Rule: {html.escape(rule_id)}</span>' if rule_id else ""
+            rule_html = f'<span style="font-size: 11px; color: {R('faint_meta')}; font-family: monospace;">Rule: {html.escape(rule_id)}</span>' if rule_id else ""
             limitations_html = (
-                f'<div style="font-size: 11px; color: #586069; font-style: italic; margin-top: 5px; padding-top: 4px; border-top: 1px dotted #e1e4e8;">'
+                f'<div style="font-size: 11px; color: {R('muted')}; font-style: italic; margin-top: 5px; padding-top: 4px; border-top: 1px dotted {R('panel_border')};">'
                 f'<b>Scope Limitation:</b> {html.escape(limitations)}</div>'
             ) if limitations else ""
 
             card = f"""
-            <div style="border: 1px solid #e1e4e8; border-left: 4px solid {card_border}; border-radius: 4px; background-color: {card_bg}; padding: 6px 10px; margin-bottom: 8px;">
+            <div style="border: 1px solid {R('panel_border')}; border-left: 4px solid {card_border}; border-radius: 4px; background-color: {card_bg}; padding: 6px 10px; margin-bottom: 8px;">
                 <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 4px;">
                     <tr>
                         <td align="left">
-                            <span style="background-color: {cat_badge_bg}; color: #ffffff; font-weight: bold; font-size: 10px; padding: 2px 6px; border-radius: 3px;">{html.escape(cat.upper())}</span>
-                            <span style="background-color: {sev_bg}; color: #ffffff; font-weight: bold; font-size: 10px; padding: 2px 6px; border-radius: 3px; margin-left: 4px;">{html.escape(sev.upper())}</span>
+                            <span style="background-color: {cat_badge_bg}; color: {R('white')}; font-weight: bold; font-size: 10px; padding: 2px 6px; border-radius: 3px;">{html.escape(cat.upper())}</span>
+                            <span style="background-color: {sev_bg}; color: {R('white')}; font-weight: bold; font-size: 10px; padding: 2px 6px; border-radius: 3px; margin-left: 4px;">{html.escape(sev.upper())}</span>
                         </td>
                         <td align="right">
                             {rule_html}
@@ -1388,13 +1832,13 @@ class MainWindow(QMainWindow):
                 <div style="font-size: 13px; font-weight: bold; color: {title_color}; margin-bottom: 3px;">
                     {html.escape(f.title)}
                 </div>
-                <div style="font-size: 11px; color: #586069; margin-bottom: 4px;">
+                <div style="font-size: 11px; color: {R('muted')}; margin-bottom: 4px;">
                     {html.escape(sev_guidance)} · {html.escape(cat_guidance)}
                 </div>
-                <div style="font-size: 12px; color: #24292e; line-height: 1.4; margin-bottom: 4px;">
+                <div style="font-size: 12px; color: {R('text')}; line-height: 1.4; margin-bottom: 4px;">
                     {html.escape(f.description)}
                 </div>
-                <div style="background-color: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 3px; padding: 4px 8px; font-family: monospace; font-size: 11px; color: #24292e; word-break: break-all;">
+                <div style="background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; border-radius: 3px; padding: 4px 8px; font-family: monospace; font-size: 11px; color: {R('text')}; word-break: break-all;">
                     <b>{html.escape(evidence_heading)}</b>
                     {evidence_block}
                 </div>
@@ -1409,8 +1853,8 @@ class MainWindow(QMainWindow):
                 for card_index, f in coverage
             ]
             cards.append(f"""
-            <div style="font-weight: bold; font-size: 13px; margin: 12px 0 8px; color: #333;">=== COVERAGE &amp; LIMITATIONS ({len(coverage)} noted) ===</div>
-            <div style="font-family: sans-serif; font-size: 11px; color: #586069; margin-bottom: 8px; line-height: 1.4;">
+            <div style="font-weight: bold; font-size: 13px; margin: 12px 0 8px; color: {R('text_alt')};">=== COVERAGE &amp; LIMITATIONS ({len(coverage)} noted) ===</div>
+            <div style="font-family: sans-serif; font-size: 11px; color: {R('muted')}; margin-bottom: 8px; line-height: 1.4;">
                 A browser listed as not detected was simply not found on this system. A missing profile
                 directory is not automatically a vulnerability. An unsupported browser was not scanned,
                 which is not the same as a failed scan. Unchecked sources are coverage gaps — never
@@ -1455,9 +1899,9 @@ class MainWindow(QMainWindow):
                 shown = desc_lines[:COVERAGE_DESCRIPTION_PREVIEW_LIMIT]
                 more = len(desc_lines) - len(shown)
                 toggle = (
-                    f'<div style="font-size: 11px; color: #6a737d; font-style: italic; margin-top: 4px;">'
+                    f'<div style="font-size: 11px; color: {R('faint_meta')}; font-style: italic; margin-top: 4px;">'
                     f'+{more} more — '
-                    f'<a href="#ev-{card_index}-show" style="color: #0366d6;">Show all</a></div>'
+                    f'<a href="#ev-{card_index}-show" style="color: {R('link')};">Show all</a></div>'
                 )
             else:
                 shown = desc_lines
@@ -1465,31 +1909,31 @@ class MainWindow(QMainWindow):
                 if len(desc_lines) > COVERAGE_DESCRIPTION_PREVIEW_LIMIT and is_expanded:
                     toggle = (
                         f'<div style="font-size: 11px; margin-top: 4px;">'
-                        f'<a href="#ev-{card_index}-hide" style="color: #0366d6;">Show less</a></div>'
+                        f'<a href="#ev-{card_index}-hide" style="color: {R('link')};">Show less</a></div>'
                     )
             desc_html = "".join(
-                f'<div style="font-size: 12px; color: #24292e; margin-bottom: 2px; '
+                f'<div style="font-size: 12px; color: {R('text')}; margin-bottom: 2px; '
                 f'word-break: break-all;">{html.escape(p)}</div>'
                 for p in shown
             ) + toggle
             evidence_html = ""
         else:
             desc_html = "".join(
-                f'<div style="font-size: 12px; color: #24292e; margin-bottom: 2px; '
+                f'<div style="font-size: 12px; color: {R('text')}; margin-bottom: 2px; '
                 f'word-break: break-all;">{html.escape(p)}</div>'
                 for p in desc_lines
             )
             evidence_html = f"""
-                <div style="background-color: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 3px; padding: 4px 8px; margin-top: 5px; font-size: 11px; color: #24292e; word-break: break-all;">
+                <div style="background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; border-radius: 3px; padding: 4px 8px; margin-top: 5px; font-size: 11px; color: {R('text')}; word-break: break-all;">
                     {format_finding_evidence_html(f.evidence, expanded=is_expanded, card_index=card_index)}
                 </div>"""
 
         return f"""
-            <div style="border: 1px solid #e1e4e8; border-radius: 4px; background-color: #fbfcfd; padding: 8px 10px; margin-bottom: 8px;">
-                <div style="font-size: 12px; font-weight: bold; color: #24292e; margin-bottom: 3px;">
+            <div style="border: 1px solid {R('panel_border')}; border-radius: 4px; background-color: {R('card_bg')}; padding: 8px 10px; margin-bottom: 8px;">
+                <div style="font-size: 12px; font-weight: bold; color: {R('text')}; margin-bottom: 3px;">
                     {html.escape(f.title)}
                 </div>
-                <div style="font-size: 11px; color: #586069; font-style: italic; margin-bottom: 5px;">
+                <div style="font-size: 11px; color: {R('muted')}; font-style: italic; margin-bottom: 5px;">
                     {html.escape(intro)}
                 </div>
                 {desc_html}{evidence_html}
@@ -1538,30 +1982,30 @@ class MainWindow(QMainWindow):
             )
             lines.append(header)
             if show_body:
-                lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+                lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
                 lines.append(_records(items, group))
                 lines.append('</div>')
 
         lines = [
             '<div style="font-family: sans-serif; padding: 4px;">',
             '<div style="font-weight: bold; font-size: 13px; margin-bottom: 8px;">=== FOOTPRINT DATA ===</div>',
-            '<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">System Footprint:</div>'
+            f'<div style="font-weight: bold; font-size: 12px; color: {R("header_accent")}; margin-bottom: 4px;">System Footprint:</div>'
         ]
 
         if system_info:
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
             for fd in system_info:
-                lines.append(f'<div style="font-size: 12px; margin-bottom: 3px;"><b>{html.escape(fd.subcategory)}:</b> {html.escape(str(fd.value))} <span style="color: #888; font-size: 11px;">[Source: {html.escape(fd.source)}]</span></div>')
+                lines.append(f'<div style="font-size: 12px; margin-bottom: 3px;"><b>{html.escape(fd.subcategory)}:</b> {html.escape(str(fd.value))} <span style="color: {R('faint')}; font-size: 11px;">[Source: {html.escape(fd.source)}]</span></div>')
             lines.append('</div>')
 
         if startups:
-            _group(f'<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Startup Applications ({len(startups)} detected):</div>', "startups", startups)
+            _group(f'<div style="font-weight: bold; font-size: 12px; color: {R('header_accent')}; margin-bottom: 4px;">Startup Applications ({len(startups)} detected):</div>', "startups", startups)
 
         if installed_apps:
-            _group(f'<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Installed Applications ({len(installed_apps)} detected):</div>', "installed_apps", installed_apps)
+            _group(f'<div style="font-weight: bold; font-size: 12px; color: {R('header_accent')}; margin-bottom: 4px;">Installed Applications ({len(installed_apps)} detected):</div>', "installed_apps", installed_apps)
 
         if processes:
-            _group(f'<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Running Processes ({len(processes)} detected):</div>', "processes", processes)
+            _group(f'<div style="font-weight: bold; font-size: 12px; color: {R('header_accent')}; margin-bottom: 4px;">Running Processes ({len(processes)} detected):</div>', "processes", processes)
 
         lines.append('</div>')
         return "\n".join(lines)
@@ -1605,7 +2049,7 @@ class MainWindow(QMainWindow):
             )
             lines.append(header)
             if show_body:
-                lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+                lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
                 lines.append(_records(items, group))
                 lines.append('</div>')
 
@@ -1615,14 +2059,14 @@ class MainWindow(QMainWindow):
         ]
 
         if browsers:
-            _group(f'<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Detected Browsers ({len(browsers)}):</div>', "browsers", browsers)
+            _group(f'<div style="font-weight: bold; font-size: 12px; color: {R('header_accent')}; margin-bottom: 4px;">Detected Browsers ({len(browsers)}):</div>', "browsers", browsers)
 
         if extensions:
-            _group(f'<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Installed Extensions ({len(extensions)}):</div>', "extensions", extensions)
+            _group(f'<div style="font-weight: bold; font-size: 12px; color: {R('header_accent')}; margin-bottom: 4px;">Installed Extensions ({len(extensions)}):</div>', "extensions", extensions)
 
         if coverage:
-            lines.append('<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Scan Coverage Notes:</div>')
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+            lines.append(f'<div style="font-weight: bold; font-size: 12px; color: {R("header_accent")}; margin-bottom: 4px;">Scan Coverage Notes:</div>')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
             for c in coverage:
                 lines.append(f'<div style="font-size: 12px; margin-bottom: 3px;">{html.escape(str(c.value))}</div>')
             lines.append('</div>')
@@ -1651,7 +2095,7 @@ class MainWindow(QMainWindow):
             elif fd.subcategory == "Potentially Sensitive":
                 sensitive_entries.append(fd)
 
-        sensitive_box = '<div style="background-color: #fff8f8; border: 1px solid #f5c6cb; border-radius: 4px; padding: 8px; margin-bottom: 10px;">'
+        sensitive_box = f'<div style="background-color: {R("sensitive_bg")}; border: 1px solid {R("sensitive_border")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">'
 
         def _records(items, group, marker="•", headline_color=None):
             return "\n".join(
@@ -1674,7 +2118,7 @@ class MainWindow(QMainWindow):
             )
             lines.append(header)
             if show_body:
-                lines.append(box_open or '<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+                lines.append(box_open or f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
                 lines.append(_records(items, group, marker=marker,
                                       headline_color=headline_color))
                 lines.append('</div>')
@@ -1685,20 +2129,20 @@ class MainWindow(QMainWindow):
         ]
 
         if file_details:
-            lines.append('<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">[File Details]</div>')
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+            lines.append(f'<div style="font-weight: bold; font-size: 12px; color: {R("header_accent")}; margin-bottom: 4px;">[File Details]</div>')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
             for item in file_details:
                 lines.append(f'<div style="font-size: 12px; margin-bottom: 3px; word-break: break-all;">• {html.escape(str(item))}</div>')
             lines.append('</div>')
 
         if sensitive_entries:
-            _group(f'<div style="font-weight: bold; font-size: 12px; color: #d9534f; margin-bottom: 4px;">[Potentially Sensitive Metadata ({len(sensitive_entries)} items)]</div>', "sensitive", sensitive_entries, box_open=sensitive_box, marker="⚠️", headline_color="#721c24")
+            _group(f'<div style="font-weight: bold; font-size: 12px; color: {R('danger_header')}; margin-bottom: 4px;">[Potentially Sensitive Metadata ({len(sensitive_entries)} items)]</div>', "sensitive", sensitive_entries, box_open=sensitive_box, marker="⚠️", headline_color=f"{R('sensitive_text')}")
         else:
-            lines.append('<div style="font-weight: bold; font-size: 12px; color: #555; margin-bottom: 4px;">[Potentially Sensitive Metadata]</div>')
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: #666;">No potentially sensitive metadata detected in this file.</div>')
+            lines.append(f'<div style="font-weight: bold; font-size: 12px; color: {R("subtle_alt")}; margin-bottom: 4px;">[Potentially Sensitive Metadata]</div>')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: {R("subtle")};">No potentially sensitive metadata detected in this file.</div>')
 
         if meta_entries:
-            _group(f'<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">[Extracted Metadata ({len(meta_entries)} fields)]</div>', "meta", meta_entries)
+            _group(f'<div style="font-weight: bold; font-size: 12px; color: {R('header_accent')}; margin-bottom: 4px;">[Extracted Metadata ({len(meta_entries)} fields)]</div>', "meta", meta_entries)
 
         lines.append('</div>')
         return "\n".join(lines)
@@ -1733,7 +2177,7 @@ class MainWindow(QMainWindow):
 
         if query or (module and module != "All"):
             lines.append(
-                f'<div style="font-size: 12px; color: #586069; margin-bottom: 8px;">'
+                f'<div style="font-size: 12px; color: {R('muted')}; margin-bottom: 8px;">'
                 f'Filter matched <b>{len(visible)}</b> of <b>{total_records}</b> records.</div>'
             )
 
@@ -1752,19 +2196,19 @@ class MainWindow(QMainWindow):
                 file_items, view_key=view_key, collapsed=collapsed,
                 expanded_records=expanded_records))
         elif "no file selected" in (result.message or "").lower():
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: #666;">File Metadata was skipped because no file was selected. Select a file and run Full Scan again to include it.</div>')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: {R("subtle")};">File Metadata was skipped because no file was selected. Select a file and run Full Scan again to include it.</div>')
 
         if other:
-            lines.append('<div style="font-weight: bold; font-size: 12px; color: #1e3799; margin-bottom: 4px;">Additional Evidence:</div>')
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+            lines.append(f'<div style="font-weight: bold; font-size: 12px; color: {R("header_accent")}; margin-bottom: 4px;">Additional Evidence:</div>')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
             for fd in other:
-                lines.append(f'<div style="font-size: 12px; margin-bottom: 3px; word-break: break-all;"><b>{html.escape(fd.subcategory)}:</b> {html.escape(str(fd.value))} <span style="color: #888; font-size: 11px;">[Source: {html.escape(fd.source)}]</span></div>')
+                lines.append(f'<div style="font-size: 12px; margin-bottom: 3px; word-break: break-all;"><b>{html.escape(fd.subcategory)}:</b> {html.escape(str(fd.value))} <span style="color: {R('faint')}; font-size: 11px;">[Source: {html.escape(fd.source)}]</span></div>')
             lines.append('</div>')
 
         if not visible and footprint_data:
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: #666;">No records match the current filter. Clear the search or choose a different module to see more evidence.</div>')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: {R("subtle")};">No records match the current filter. Clear the search or choose a different module to see more evidence.</div>')
         elif not footprint_data:
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: #666;">No collected evidence was returned by the included modules.</div>')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px; font-size: 12px; color: {R("subtle")};">No collected evidence was returned by the included modules.</div>')
 
         lines.append('</div>')
         return "\n".join(lines)
@@ -1777,14 +2221,14 @@ class MainWindow(QMainWindow):
 
         if footprint_data:
             lines.append('<div style="font-weight: bold; font-size: 13px; margin-bottom: 8px;">=== FOOTPRINT DATA ===</div>')
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
             for fd in footprint_data:
                 lines.append(f'<div style="font-size: 12px; margin-bottom: 4px; word-break: break-all;">Source: {html.escape(fd.source)}<br>Value: {html.escape(str(fd.value))}</div>')
             lines.append('</div>')
 
         if findings:
             lines.append(f'<div style="font-weight: bold; font-size: 13px; margin-bottom: 8px;">=== FINDINGS ===</div>')
-            lines.append('<div style="background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
+            lines.append(f'<div style="background-color: {R("panel_bg")}; border: 1px solid {R("panel_border_alt")}; border-radius: 4px; padding: 8px; margin-bottom: 10px;">')
             for f in findings:
                 ev_str = ", ".join(f.evidence) if isinstance(f.evidence, list) else str(f.evidence)
                 lines.append(f'<div style="font-size: 12px; margin-bottom: 6px;">[{html.escape(f.severity)}] {html.escape(f.title)}<br>Description: {html.escape(f.description)}<br>Evidence: {html.escape(ev_str)}</div>')
@@ -1902,6 +2346,8 @@ class MainWindow(QMainWindow):
             self.results_area.setHtml(self.format_public_evidence_html(result.footprint_data, result.findings))
 
             self.public_sub_tabs.setCurrentIndex(0 if findings_count > 0 else 1)
+
+        self._refresh_dashboard(result)
 
     def on_scan_error(self, err_msg):
         if hasattr(self, 'scan_btn'):
