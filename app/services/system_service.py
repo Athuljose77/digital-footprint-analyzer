@@ -399,41 +399,105 @@ def get_installed_applications() -> dict:
 # RUNNING PROCESSES COLLECTOR
 # ============================================================
 
+def _collect_windows_processes_toolhelp() -> dict:
+    """Fallback collector using Win32 Toolhelp32 snapshot (fast & no external processes)."""
+    try:
+        from ctypes import wintypes
+
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t),
+                ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long),
+                ("dwFlags", wintypes.DWORD),
+                ("szExeFile", ctypes.c_char * 260)
+            ]
+
+        # TH32CS_SNAPPROCESS = 0x00000002
+        h_snap = ctypes.windll.kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+        if h_snap == -1 or h_snap == 0:
+            return {"status": "UNAVAILABLE", "processes": []}
+
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+
+        processes = []
+        if ctypes.windll.kernel32.Process32First(h_snap, ctypes.byref(pe)):
+            while True:
+                name = pe.szExeFile.decode("utf-8", errors="replace").rstrip("\x00")
+                pid = str(pe.th32ProcessID)
+                if name:
+                    processes.append({
+                        "pid": pid,
+                        "name": name,
+                        "executable": "Unavailable",
+                        "user": "Unavailable",
+                        "status": "Running"
+                    })
+                if not ctypes.windll.kernel32.Process32Next(h_snap, ctypes.byref(pe)):
+                    break
+
+        ctypes.windll.kernel32.CloseHandle(h_snap)
+        if processes:
+            return {"status": "SUCCESS", "processes": processes}
+        return {"status": "UNAVAILABLE", "processes": []}
+    except Exception:
+        return {"status": "UNAVAILABLE", "processes": []}
+
+
 def collect_windows_processes() -> dict:
-    """Collect running processes on Windows using tasklist."""
+    """Collect running processes on Windows using tasklist with Toolhelp fallback."""
     try:
         proc = subprocess.run(
-            ["tasklist", "/V", "/FO", "CSV"],
+            ["tasklist", "/FO", "CSV"],
             capture_output=True,
             text=True,
             check=False,
             timeout=10
         )
-        if proc.returncode != 0:
-            return {"status": "UNAVAILABLE", "processes": []}
-            
-        processes = []
-        import csv
-        import io
-        reader = csv.DictReader(io.StringIO(proc.stdout))
-        for row in reader:
-            pid = row.get("PID", "").strip()
-            name = row.get("Image Name", "").strip()
-            user = row.get("User Name", "").strip()
-            status = row.get("Status", "").strip()
-            
-            if not pid or not name:
-                continue
-                
-            processes.append({
-                "pid": pid,
-                "name": name,
-                "executable": "Unavailable",
-                "user": user if user and user != "N/A" else "Unavailable",
-                "status": status if status and status != "Unknown" else "Unavailable"
-            })
-            
-        return {"status": "SUCCESS", "processes": processes}
+        if proc.returncode == 0 and proc.stdout:
+            processes = []
+            import csv
+            import io
+            reader = csv.DictReader(io.StringIO(proc.stdout))
+            for row in reader:
+                pid = row.get("PID", "").strip()
+                name = row.get("Image Name", "").strip()
+                if not pid or not name:
+                    continue
+
+                user_raw = row.get("User Name", "").strip()
+                status_raw = row.get("Status")
+
+                user = user_raw if user_raw and user_raw != "N/A" else "Unavailable"
+
+                if status_raw is not None:
+                    status_str = status_raw.strip()
+                    status = status_str if status_str and status_str != "Unknown" else "Unavailable"
+                else:
+                    status = "Running"
+
+                processes.append({
+                    "pid": pid,
+                    "name": name,
+                    "executable": "Unavailable",
+                    "user": user,
+                    "status": status
+                })
+
+            if processes:
+                return {"status": "SUCCESS", "processes": processes}
+    except Exception:
+        pass
+
+    # Fallback to Toolhelp32 snapshot if tasklist timed out, failed, or was unavailable
+    try:
+        return _collect_windows_processes_toolhelp()
     except Exception:
         return {"status": "UNAVAILABLE", "processes": []}
 

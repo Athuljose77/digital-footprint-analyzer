@@ -1,9 +1,12 @@
 import os
 import html
+import platform
+import getpass
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QComboBox,
-    QTextEdit, QTextBrowser, QStackedWidget, QListWidget, QTabWidget, QFileDialog
+    QTextEdit, QTextBrowser, QStackedWidget, QListWidget, QTabWidget, QFileDialog,
+    QScrollArea, QFrame, QGridLayout
 )
 from PySide6.QtCore import Qt, QTimer
 from app.ui.workers import ScanWorker
@@ -430,8 +433,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Digital Footprint Analyzer")
-        self.resize(850, 650)
-
+        self.resize(920, 660)
         self.worker = None
         self.selected_file_path = None
         self.full_scan_file_path = None
@@ -454,7 +456,7 @@ class MainWindow(QMainWindow):
 
         # Sidebar navigation
         self.sidebar = QListWidget()
-        self.sidebar.setFixedWidth(150)
+        self.sidebar.setFixedWidth(160)
         self.sidebar.addItem("Home")
         self.sidebar.addItem("My Footprint")
         self.sidebar.addItem("Public Lookup")
@@ -472,14 +474,268 @@ class MainWindow(QMainWindow):
         self.init_public_lookup_page()
         self.init_settings_page()
 
-        self.sidebar.setCurrentRow(2)  # Default to Public Lookup
+        self.sidebar.setCurrentRow(0)  # Default to Home
+
+    def nav_to_system_footprint(self):
+        self.sidebar.setCurrentRow(1)
+        self.my_footprint_tabs.setCurrentIndex(0)
+
+    def nav_to_browser_footprint(self):
+        self.sidebar.setCurrentRow(1)
+        self.my_footprint_tabs.setCurrentIndex(1)
+
+    def nav_to_file_metadata(self):
+        self.sidebar.setCurrentRow(1)
+        self.my_footprint_tabs.setCurrentIndex(2)
+
+    def nav_to_full_scan(self):
+        self.sidebar.setCurrentRow(1)
+        self.my_footprint_tabs.setCurrentIndex(3)
+
+    def nav_to_public_lookup(self):
+        self.sidebar.setCurrentRow(2)
 
     def init_home_page(self):
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(15, 12, 15, 20)
+        layout.setSpacing(16)
+
+        # 1. Hero Header Banner
+        hero_card = QFrame()
+        hero_card.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0f172a, stop:0.55 #1e293b, stop:1 #1e3a8a);
+                border-radius: 12px;
+                border: 1px solid #334155;
+            }
+        """)
+        hero_layout = QVBoxLayout(hero_card)
+        hero_layout.setContentsMargins(24, 20, 24, 20)
+        hero_layout.setSpacing(10)
+
+        title_label = QLabel("🛡️ Digital Footprint Analyzer")
+        title_label.setStyleSheet("color: #ffffff; font-size: 24px; font-weight: bold; background: transparent;")
+        hero_layout.addWidget(title_label)
+
+        subtitle_label = QLabel(
+            "An all-in-one local privacy intelligence and footprint reconnaissance suite. "
+            "Audit your system configuration, examine browser extension traces, inspect file metadata for sensitive leaks, "
+            "and check public breach databases."
+        )
+        subtitle_label.setWordWrap(True)
+        subtitle_label.setStyleSheet("color: #cbd5e1; font-size: 13px; line-height: 1.5; background: transparent;")
+        hero_layout.addWidget(subtitle_label)
+
+        # Badges row
+        badges_row = QHBoxLayout()
+        badges_row.setSpacing(10)
+        badge_style = """
+            QLabel {
+                background: rgba(255, 255, 255, 0.12);
+                color: #e2e8f0;
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                border-radius: 12px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+        """
+        for text in ["🔒 100% Read-Only Inspection", "🛡️ Zero Cloud Data Collection", "⚡ Multi-Vector Privacy Audit"]:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(badge_style)
+            badges_row.addWidget(lbl)
+        badges_row.addStretch()
+        hero_layout.addLayout(badges_row)
+
+        layout.addWidget(hero_card)
+
+        # 2. System Snapshot Bar
+        try:
+            os_name = f"{platform.system()} {platform.release()}"
+            arch = platform.machine()
+            user_name = getpass.getuser()
+        except Exception:
+            os_name = "Windows"
+            arch = "x64"
+            user_name = "User"
+
+        sys_bar = QFrame()
+        sys_bar.setStyleSheet("""
+            QFrame {
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+            }
+        """)
+        sys_bar_layout = QHBoxLayout(sys_bar)
+        sys_bar_layout.setContentsMargins(16, 9, 16, 9)
+        sys_bar_layout.setSpacing(20)
+
+        sys_bar_layout.addWidget(QLabel(f"💻 <span style='color: #64748b;'>Host OS:</span> <b style='color: #0f172a;'>{os_name} ({arch})</b>"))
+        sys_bar_layout.addWidget(QLabel(f"👤 <span style='color: #64748b;'>Current User:</span> <b style='color: #0f172a;'>{user_name}</b>"))
+        sys_bar_layout.addWidget(QLabel("⚡ <span style='color: #64748b;'>Engine:</span> <b style='color: #16a34a;'>Ready (4 Modules Active)</b>"))
+        sys_bar_layout.addStretch()
+
+        layout.addWidget(sys_bar)
+
+        # Section Header: Audit Modules
+        modules_header = QLabel("<h3>Audit Modules</h3>")
+        modules_header.setStyleSheet("color: #0f172a; margin-top: 4px;")
+        layout.addWidget(modules_header)
+
+        # 3. 2x2 Feature Modules Grid
+        grid = QGridLayout()
+        grid.setSpacing(14)
+
+        def create_module_card(icon, title, category, description, btn_text, on_click):
+            card = QFrame()
+            card.setStyleSheet("""
+                QFrame {
+                    background: #ffffff;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 10px;
+                }
+                QFrame:hover {
+                    border: 1px solid #3b82f6;
+                    background: #fbfdff;
+                }
+            """)
+            c_layout = QVBoxLayout(card)
+            c_layout.setContentsMargins(18, 16, 18, 16)
+            c_layout.setSpacing(10)
+
+            top_row = QHBoxLayout()
+            icon_lbl = QLabel(icon)
+            icon_lbl.setStyleSheet("font-size: 22px; background: transparent;")
+            top_row.addWidget(icon_lbl)
+
+            cat_lbl = QLabel(category)
+            cat_lbl.setStyleSheet("background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px;")
+            top_row.addWidget(cat_lbl)
+            top_row.addStretch()
+            c_layout.addLayout(top_row)
+
+            title_lbl = QLabel(title)
+            title_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #0f172a; background: transparent;")
+            c_layout.addWidget(title_lbl)
+
+            desc_lbl = QLabel(description)
+            desc_lbl.setWordWrap(True)
+            desc_lbl.setStyleSheet("font-size: 12px; color: #64748b; line-height: 1.4; background: transparent;")
+            desc_lbl.setMinimumHeight(44)
+            c_layout.addWidget(desc_lbl)
+
+            btn = QPushButton(btn_text)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: #2563eb;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 8px 14px;
+                    font-size: 12px;
+                    font-weight: 600;
+                }
+                QPushButton:hover {
+                    background: #1d4ed8;
+                }
+                QPushButton:pressed {
+                    background: #1e40af;
+                }
+            """)
+            btn.clicked.connect(on_click)
+            c_layout.addWidget(btn)
+
+            return card
+
+        card_sys = create_module_card(
+            "🖥️",
+            "System Footprint",
+            "LOCAL SYSTEM",
+            "Audit installed software from registry databases and inspect startup autorun programs that persist across reboots.",
+            "Audit System Footprint →",
+            self.nav_to_system_footprint
+        )
+        card_browser = create_module_card(
+            "🌐",
+            "Browser Footprint",
+            "CHROMIUM BROWSERS",
+            "Detect Google Chrome and Microsoft Edge profiles, inspect installed extensions, and resolve localized extension manifests.",
+            "Audit Browser Footprint →",
+            self.nav_to_browser_footprint
+        )
+        card_file = create_module_card(
+            "📁",
+            "File & Metadata Footprint",
+            "MEDIA & EXIF",
+            "Analyze JPEG and PNG images for embedded EXIF tags, GPS location markers, camera serials, and author timestamps.",
+            "Inspect File Metadata →",
+            self.nav_to_file_metadata
+        )
+        card_public = create_module_card(
+            "🔍",
+            "Public Footprint Lookup",
+            "OSINT RECONNAISSANCE",
+            "Check email exposure against known breach datasets and search for username presence across 300+ online platforms.",
+            "Launch Public Lookup →",
+            self.nav_to_public_lookup
+        )
+
+        grid.addWidget(card_sys, 0, 0)
+        grid.addWidget(card_browser, 0, 1)
+        grid.addWidget(card_file, 1, 0)
+        grid.addWidget(card_public, 1, 1)
+        layout.addLayout(grid)
+
+        # 4. Security & Privacy Best Practices Card
+        tips_card = QFrame()
+        tips_card.setStyleSheet("""
+            QFrame {
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 10px;
+            }
+        """)
+        tips_layout = QVBoxLayout(tips_card)
+        tips_layout.setContentsMargins(18, 16, 18, 16)
+        tips_layout.setSpacing(10)
+
+        tips_title = QLabel("💡 Privacy Hygiene & Exposure Reduction Tips")
+        tips_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #0f172a; background: transparent;")
+        tips_layout.addWidget(tips_title)
+
+        tips_text = QLabel(
+            "• <b>Extension Pruning:</b> Periodically uninstall browser extensions you no longer use; extensions often hold broad page permissions.<br>"
+            "• <b>EXIF Scrubbing:</b> Photos captured on smartphones and cameras frequently store exact GPS coordinates in EXIF headers before sharing.<br>"
+            "• <b>Startup Optimization:</b> Audit startup applications to reduce unwanted background network telemetry and shorten boot time.<br>"
+            "• <b>Breach Monitoring:</b> When your email appears in a public breach, immediately rotate passwords and enable Multi-Factor Authentication (MFA)."
+        )
+        tips_text.setWordWrap(True)
+        tips_text.setStyleSheet("color: #475569; font-size: 12px; line-height: 1.6; background: transparent;")
+        tips_layout.addWidget(tips_text)
+
+        layout.addWidget(tips_card)
+
+        # Footer
+        footer_layout = QHBoxLayout()
+        footer_label = QLabel("Digital Footprint Analyzer • v1.0 • Privacy-Preserving Security Inspection")
+        footer_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        footer_layout.addWidget(footer_label)
+        footer_layout.addStretch()
+        layout.addLayout(footer_layout)
+
+        scroll.setWidget(container)
+
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(QLabel("<h2>Welcome to Digital Footprint Analyzer</h2>"))
-        layout.addWidget(QLabel("A privacy and security awareness application to analyze local traces and public digital exposure."))
-        layout.addStretch()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.addWidget(scroll)
         self.pages.addWidget(page)
 
     def init_my_footprint_page(self):
