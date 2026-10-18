@@ -279,7 +279,14 @@ class TestFullScanUI(unittest.TestCase):
         self.window.scan_type_combo.setCurrentText("Username")
         with patch.object(main_window_module, "ScanWorker") as mock_worker_cls:
             self.window.start_scan()
-        mock_worker_cls.assert_called_once_with("Username", "someuser")
+        # Scan type and target are the contract; the call also forwards the
+        # saved network timeout used by the public lookup.
+        self.assertEqual(mock_worker_cls.call_count, 1)
+        args, kwargs = mock_worker_cls.call_args
+        self.assertEqual(args[0], "Username")
+        self.assertEqual(args[1], "someuser")
+        self.assertEqual(kwargs["options"]["network_timeout"],
+                         float(self.window.network_timeout))
         # Full Scan views untouched by Public Lookup completion.
         self.window.full_scan_findings_area.setHtml("SENTINEL-FULL-FINDINGS")
         self.window.full_scan_results_area.setHtml("SENTINEL-FULL-EVIDENCE")

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QApplication
 import app.ui.workers as workers_module
 from app.ui.workers import ScanWorker
 from app.models.common import ScanResult
+from app.services.system_service import DEFAULT_PROCESS_COLLECTOR_MODE
 
 app = QApplication.instance()
 if app is None:
@@ -183,7 +184,14 @@ class TestFullScanWorkerDispatch(unittest.TestCase):
                 main_window_module, "ScanWorker"
             ) as mock_worker_cls:
                 window.start_system_scan()
-            mock_worker_cls.assert_called_once_with("System", "")
+            # Scan type and target are the contract; the call also forwards
+            # the saved process-collector preference.
+            self.assertEqual(mock_worker_cls.call_count, 1)
+            args, kwargs = mock_worker_cls.call_args
+            self.assertEqual(args[0], "System")
+            self.assertEqual(args[1], "")
+            self.assertEqual(kwargs["options"]["process_mode"],
+                             DEFAULT_PROCESS_COLLECTOR_MODE)
             mock_worker_cls.return_value.start.assert_called_once_with()
         finally:
             window.close()

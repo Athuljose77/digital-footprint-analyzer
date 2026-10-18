@@ -100,8 +100,14 @@ def _rich_result():
 
 class TestThemeMaps(unittest.TestCase):
     def test_light_is_default(self):
-        self.assertFalse(theme.is_dark())
-        self.assertEqual(R("panel_bg"), "#f8f9fa")
+        # The module default is light. Another test may have constructed a
+        # MainWindow, which applies the saved user preference, so this checks
+        # the declared default rather than whatever ran before it.
+        self.assertFalse(theme.DEFAULT_DARK)
+        # Read the light map directly: R() follows whichever theme is
+        # currently active, which an earlier test may legitimately have set.
+        self.assertEqual(LIGHT_REPORT["panel_bg"], "#f8f9fa")
+        self.assertEqual(LIGHT_REPORT["text"], "#24292e")
 
     def test_maps_cover_same_keys(self):
         self.assertEqual(set(LIGHT_REPORT), set(DARK_REPORT))

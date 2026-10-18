@@ -1,5 +1,7 @@
 import os
+import sys
 import html
+import platform
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -7,13 +9,19 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QComboBox, QDialog, QFrame,
     QTextEdit, QTextBrowser, QStackedWidget, QListWidget, QTabWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog,
-    QListWidgetItem
+    QListWidgetItem, QGroupBox, QButtonGroup, QRadioButton, QCheckBox,
+    QGridLayout, QApplication
 )
-from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QTimer, QSize, QSettings
+from PySide6.QtGui import QColor, QPalette
+from app.ui import theme
 from app.ui.icons import icon, pixmap
 from app.ui.theme import R
 from app.ui.workers import ScanWorker
+from app.services.system_service import (
+    DEFAULT_PROCESS_COLLECTOR_MODE,
+    PROCESS_COLLECTOR_MODES,
+)
 
 
 # Maximum finding-evidence entries rendered inside a single findings card.
@@ -446,6 +454,11 @@ class MainWindow(QMainWindow):
         # set of expanded evidence-card indices per view. Never affects scan
         # semantics; cleared whenever a new result arrives for a view.
         self._last_results = {}
+
+        # Widgets whose stylesheet is built from theme tokens, kept as
+        # (widget, template) pairs so one pass can restyle all of them when
+        # the theme changes. No panel is left holding the old theme's colors.
+        self._themed_widgets = []
         self._expanded_cards = {}
         self._evidence_filter_timer = None
         self._pending_evidence_view = None
@@ -457,6 +470,28 @@ class MainWindow(QMainWindow):
         # history plus the latest result summary. Never affects scanning.
         self._scan_history = []
         self._dashboard_summary = None
+
+        # Persisted user preferences. Read before any widget is built so the
+        # first paint already uses the saved theme.
+        self.app_settings = QSettings("DigitalFootprintAnalyzer", "Preferences")
+        self.current_theme = str(
+            self.app_settings.value("theme_mode", "dark")).strip().lower()
+        if self.current_theme not in ("system", "light", "dark"):
+            self.current_theme = "dark"
+        self.high_contrast = self.app_settings.value(
+            "high_contrast_selection", True, type=bool)
+        self.font_scale = int(self.app_settings.value("font_scale", 13))
+        self.evidence_preview_limit = int(self.app_settings.value(
+            "evidence_preview_limit", FINDING_EVIDENCE_PREVIEW_LIMIT))
+        self.process_collector_mode = str(self.app_settings.value(
+            "process_collector_mode",
+            DEFAULT_PROCESS_COLLECTOR_MODE))
+        if self.process_collector_mode not in PROCESS_COLLECTOR_MODES:
+            self.process_collector_mode = DEFAULT_PROCESS_COLLECTOR_MODE
+        self.network_timeout = int(self.app_settings.value("network_timeout", 10))
+        # The theme module is process-global, so tell it which map to use
+        # before any widget resolves R() during construction.
+        theme.set_dark_theme(self.is_dark_mode)
 
         # Main widget and layout
         central_widget = QWidget()
@@ -493,8 +528,9 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self.sidebar, stretch=1)
         self.sidebar_tagline = QLabel("Your privacy.<br>Your control.")
         self.sidebar_tagline.setWordWrap(True)
-        self.sidebar_tagline.setStyleSheet(
-            "color: #75808c; padding: 4px 8px 12px 8px;")
+        self.register_themed_widget(
+            self.sidebar_tagline,
+            "color: {faint}; padding: 4px 8px 12px 8px;")
         sidebar_layout.addWidget(self.sidebar_tagline)
         main_layout.addWidget(sidebar_container)
 
@@ -510,6 +546,13 @@ class MainWindow(QMainWindow):
 
         self.sidebar.setCurrentRow(0)  # Default to the Home dashboard
 
+        # Repaint only this window's own styled widgets. The application
+        # palette and stylesheet are applied by main.py before the first
+        # window is built, so restyling the whole app here would be wasted
+        # work on every construction. Runtime switches go through
+        # apply_theme(), which does restyle everything.
+        self._refresh_home_theme()
+
     def init_home_page(self):
         page = QScrollArea()
         page.setWidgetResizable(True)
@@ -520,7 +563,7 @@ class MainWindow(QMainWindow):
         hero = QLabel(
             f"<div style='font-size: 13px; color: {R('muted')};'>Welcome to</div>"
             f"<div style='font-size: 24px; font-weight: bold;'>Digital Footprint "
-            f"<span style='color: #2dd4bf;'>Analyzer</span></div>"
+            f"<span style='color: {R('accent')};'>Analyzer</span></div>"
             f"<div style='font-size: 12px; color: {R('muted')};'>Understand your digital "
             "footprint. Keep your data in your hands.</div>"
         )
@@ -530,15 +573,15 @@ class MainWindow(QMainWindow):
         self.hero_emblem.setAlignment(Qt.AlignCenter)
         self.hero_emblem.setFixedSize(84, 84)
         self.hero_emblem.setPixmap(pixmap("fingerprint", 76))
-        self.hero_emblem.setStyleSheet(
-            "border: 2px solid #2dd4bf; border-radius: 42px; padding: 4px;"
-        )
+        self.register_themed_widget(
+            self.hero_emblem,
+            "border: 2px solid {accent}; border-radius: 42px; padding: 4px;")
         hero_row.addWidget(self.hero_emblem)
         self.hero_tagline = QLabel(
             "ANALYZE<br>DISCOVER<br>STAY INFORMED<br>STAY IN CONTROL"
         )
-        self.hero_tagline.setStyleSheet(
-            f"font-size: 10px; color: {R('muted')};")
+        self.register_themed_widget(
+            self.hero_tagline, "font-size: 10px; color: {muted};")
         hero_row.addWidget(self.hero_tagline)
         layout.addLayout(hero_row)
 
@@ -581,7 +624,7 @@ class MainWindow(QMainWindow):
         overview_header.addWidget(self.overview_scan_combo)
         overview_box.addLayout(overview_header)
         overview_sub = QLabel("A summary of the last scan results.")
-        overview_sub.setStyleSheet(f"color: {R('muted')};")
+        self.register_themed_widget(overview_sub, "color: {muted};")
         overview_sub.setWordWrap(True)
         overview_box.addWidget(overview_sub)
         self.dashboard_overview = QTextBrowser()
@@ -594,7 +637,7 @@ class MainWindow(QMainWindow):
         checklist_box = QVBoxLayout()
         checklist_box.addWidget(QLabel("<b>Privacy Checklist</b>"))
         checklist_sub = QLabel("Simple steps to improve your privacy and reduce your exposure.")
-        checklist_sub.setStyleSheet(f"color: {R('muted')};")
+        self.register_themed_widget(checklist_sub, "color: {muted};")
         checklist_sub.setWordWrap(True)
         checklist_box.addWidget(checklist_sub)
         for title, sub, tab_index, row_icon in (
@@ -604,10 +647,10 @@ class MainWindow(QMainWindow):
         ):
             row = QFrame()
             row.setFrameShape(QFrame.NoFrame)
-            row.setStyleSheet(
-                f"QFrame {{ background-color: {R('panel_bg')}; "
-                f"border: 1px solid {R('panel_border')}; border-radius: 6px; }}"
-            )
+            self.register_themed_widget(
+                row,
+                "QFrame {{ background-color: {panel_bg}; "
+                "border: 1px solid {panel_border}; border-radius: 6px; }}")
             row_layout = QHBoxLayout(row)
             row_icon_label = QLabel()
             row_icon_label.setPixmap(pixmap(row_icon, 26))
@@ -618,10 +661,10 @@ class MainWindow(QMainWindow):
             row_layout.addWidget(text, stretch=1)
             go_btn = QPushButton("›")
             go_btn.setFixedSize(28, 28)
-            go_btn.setStyleSheet(
-                "border: 1px solid #2dd4bf; border-radius: 14px; "
-                "font-size: 15px; font-weight: bold; color: #2dd4bf;"
-            )
+            self.register_themed_widget(
+                go_btn,
+                "border: 1px solid {accent}; border-radius: 14px; "
+                "font-size: 15px; font-weight: bold; color: {accent};")
             go_btn.clicked.connect(
                 lambda _checked=False, tab=tab_index: self._goto_my_footprint_tab(tab)
             )
@@ -630,7 +673,7 @@ class MainWindow(QMainWindow):
         tip = QLabel("<i>Tip: Run a Full Scan periodically to get a complete "
                      "overview of your digital footprint.</i>")
         tip.setWordWrap(True)
-        tip.setStyleSheet(f"color: {R('muted')};")
+        self.register_themed_widget(tip, "color: {muted};")
         checklist_box.addWidget(tip)
         checklist_box.addStretch()
         middle_row.addLayout(checklist_box, stretch=2)
@@ -662,10 +705,11 @@ class MainWindow(QMainWindow):
         # NoFrame: the native panel frame plus the stylesheet border rendered
         # as an ugly double box, so only the stylesheet border is used.
         card.setFrameShape(QFrame.NoFrame)
-        card.setStyleSheet(
-            f"QFrame {{ background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; "
-            "border-radius: 8px; }"
-        )
+        self.register_themed_widget(
+            card,
+            "QFrame {{ background-color: {panel_bg_alt}; "
+            "border: 1px solid {panel_border}; border-radius: 8px; }} "
+            "QFrame:hover {{ border: 1px solid {accent}; }}")
         card_layout = QVBoxLayout(card)
         icon_label = QLabel()
         icon_label.setPixmap(pixmap(icon_name, 30))
@@ -675,15 +719,15 @@ class MainWindow(QMainWindow):
         card_layout.addWidget(title_label)
         desc_label = QLabel(html.escape(description))
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet(f"color: {R('muted')};")
+        self.register_themed_widget(desc_label, "color: {muted};")
         desc_label.setAlignment(Qt.AlignTop)
         card_layout.addWidget(desc_label, stretch=1)
         action_btn = QPushButton("›")
         action_btn.setFixedSize(36, 36)
-        action_btn.setStyleSheet(
-            "border: 1px solid #2dd4bf; border-radius: 18px; "
-            "font-size: 18px; font-weight: bold; color: #2dd4bf;"
-        )
+        self.register_themed_widget(
+            action_btn,
+            "border: 1px solid {accent}; border-radius: 18px; "
+            "font-size: 18px; font-weight: bold; color: {accent};")
         card_layout.addWidget(action_btn, alignment=Qt.AlignRight)
         return card, action_btn
 
@@ -1260,13 +1304,501 @@ class MainWindow(QMainWindow):
 
         self.pages.addWidget(page)
 
+    # --------------------------------------------------------
+    # THEME AND PREFERENCE CONTROL
+    # --------------------------------------------------------
+
+    def _detect_system_dark_mode(self):
+        """Whether the host OS prefers a dark theme."""
+        if sys.platform.startswith("win"):
+            try:
+                import winreg
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+                )
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                winreg.CloseKey(key)
+                return value == 0
+            except Exception:
+                pass
+        try:
+            return self.palette().color(QPalette.ColorRole.Window).value() < 128
+        except Exception:
+            return False
+
+    @property
+    def is_dark_mode(self):
+        """True when dark colors should be used right now."""
+        if self.current_theme == "dark":
+            return True
+        if self.current_theme == "light":
+            return False
+        return self._detect_system_dark_mode()
+
+    def set_theme_mode(self, mode):
+        """Switch theme and persist the choice."""
+        mode = str(mode).strip().lower()
+        if mode not in ("system", "light", "dark"):
+            return
+        self.current_theme = mode
+        self.app_settings.setValue("theme_mode", mode)
+        self.apply_theme()
+
+    def apply_theme(self):
+        """Re-apply the palette, stylesheet, and every rendered view."""
+        dark = self.is_dark_mode
+        app = QApplication.instance()
+        if app is not None:
+            # Scope the stylesheet to this window: it covers every child
+            # widget and dialog, without restyling unrelated windows.
+            theme.apply_theme(app, dark=dark,
+                              high_contrast=self.high_contrast,
+                              font_scale=self.font_scale, target=self)
+        else:
+            theme.set_dark_theme(dark)
+        # Clear any window-level sheet so the application stylesheet wins.
+        self.setStyleSheet("")
+        self._refresh_home_theme()
+        # Report HTML resolves colors through R() at build time, so every
+        # rendered view must be rebuilt for a theme change to be visible.
+        for view_key in ("sys", "browser", "file", "full", "public"):
+            self._render_view_findings(view_key)
+            self._render_view_evidence(view_key)
+
+    def register_themed_widget(self, widget, template):
+        """Apply a token-driven stylesheet and remember it for re-theming.
+
+        Args:
+            widget: the widget to style.
+            template: a str.format template whose placeholders are token
+                names (panel_bg, panel_bg_alt, panel_border, text, muted,
+                faint, accent).
+        """
+        self._themed_widgets.append((widget, template))
+        widget.setStyleSheet(self._render_theme_template(template))
+        return widget
+
+    @staticmethod
+    def _render_theme_template(template):
+        return template.format(
+            panel_bg=R("panel_bg"),
+            panel_bg_alt=R("panel_bg_alt"),
+            panel_border=R("panel_border"),
+            text=R("text"),
+            muted=R("muted"),
+            faint=R("faint"),
+            accent=R("accent"),
+        )
+
+    def _refresh_home_theme(self):
+        """Restyle every registered widget and re-render themed HTML.
+
+        Covers the sidebar, hero, scan cards, and checklist. The dashboard
+        overview resolves colors through R() when its HTML is built, so it
+        has to be rebuilt rather than restyled.
+        """
+        for widget, template in list(self._themed_widgets):
+            try:
+                widget.setStyleSheet(self._render_theme_template(template))
+            except RuntimeError:
+                # The underlying C++ widget was already destroyed.
+                continue
+
+        if hasattr(self, "dashboard_overview"):
+            self.dashboard_overview.setHtml(
+                self._format_dashboard_overview_html())
+
+    def _render_view_findings(self, view_key):
+        """Re-render one findings area from its held result."""
+        result = self._last_results.get(view_key)
+        if result is None:
+            return
+        area = getattr(self, f"{view_key}_findings_area", None)
+        if area is None:
+            return
+        area.setHtml(self.format_findings_html(
+            result.findings,
+            evidence_count=len(result.footprint_data or []),
+            scan_status=result.status,
+            expanded=self._expanded_cards.get(view_key, set()),
+            summary=summarize_full_scan(result) if view_key == "full" else None,
+        ))
+
+    def _render_view_evidence(self, view_key):
+        """Re-render one collected-evidence area from its held result."""
+        result = self._last_results.get(view_key)
+        if result is None:
+            return
+        area = getattr(self, f"{view_key}_results_area", None)
+        if area is None:
+            return
+        renderer = {
+            "sys": self.format_system_evidence_html,
+            "browser": self.format_browser_evidence_html,
+            "file": self.format_file_evidence_html,
+        }.get(view_key)
+        if renderer is not None:
+            area.setHtml(renderer(result.footprint_data))
+        elif view_key == "full":
+            area.setHtml(self.format_full_scan_evidence_html(result))
+        elif view_key == "public":
+            area.setHtml(self.format_public_evidence_html(
+                result.footprint_data, result.findings))
+
+    # --------------------------------------------------------
+    # SETTINGS PAGE
+    # --------------------------------------------------------
+
     def init_settings_page(self):
+        """Build the Settings page: theme, scan engine, privacy, diagnostics."""
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.addWidget(QLabel("<h2>Settings</h2>"))
-        layout.addWidget(QLabel("Application settings and configuration."))
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(QLabel("<h2>Settings</h2>"))
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setSpacing(12)
+
+        # ----------------------------------------------------
+        # Appearance & theming
+        # ----------------------------------------------------
+        appearance = QGroupBox("Appearance & Theming")
+        appearance_layout = QVBoxLayout(appearance)
+        appearance_layout.setSpacing(10)
+
+        theme_desc = QLabel("Choose a color theme or follow your operating system:")
+        theme_desc.setStyleSheet(f"color: {R('muted')};")
+        appearance_layout.addWidget(theme_desc)
+
+        self.theme_btn_group = QButtonGroup(self)
+        theme_row = QHBoxLayout()
+        theme_row.setSpacing(20)
+        self.theme_system_rb = QRadioButton("System Default (Auto)")
+        self.theme_light_rb = QRadioButton("Light Mode")
+        self.theme_dark_rb = QRadioButton("Dark Mode")
+        self.theme_btn_group.addButton(self.theme_system_rb, 0)
+        self.theme_btn_group.addButton(self.theme_light_rb, 1)
+        self.theme_btn_group.addButton(self.theme_dark_rb, 2)
+        # Reflect the active mode. Toggling auto-refreshes the theme, which
+        # keeps a saved preference and the selected control consistent.
+        active_rb = {"light": self.theme_light_rb, "dark": self.theme_dark_rb}.get(
+            self.current_theme, self.theme_system_rb)
+        active_rb.setChecked(True)
+        theme_row.addWidget(self.theme_system_rb)
+        theme_row.addWidget(self.theme_light_rb)
+        theme_row.addWidget(self.theme_dark_rb)
+        theme_row.addStretch()
+        appearance_layout.addLayout(theme_row)
+        self.theme_system_rb.toggled.connect(
+            lambda c: c and self._on_theme_radio_changed("system"))
+        self.theme_light_rb.toggled.connect(
+            lambda c: c and self._on_theme_radio_changed("light"))
+        self.theme_dark_rb.toggled.connect(
+            lambda c: c and self._on_theme_radio_changed("dark"))
+
+        options_row = QHBoxLayout()
+        options_row.setSpacing(20)
+        self.contrast_checkbox = QCheckBox(
+            "High-contrast text selection (blue with white text)")
+        self.contrast_checkbox.setToolTip(
+            "Removes white-on-white selection blocks and keeps selected text "
+            "legible in both themes.")
+        self.contrast_checkbox.setChecked(self.high_contrast)
+        self.contrast_checkbox.toggled.connect(self._on_contrast_toggled)
+        options_row.addWidget(self.contrast_checkbox)
+        options_row.addSpacing(20)
+        options_row.addWidget(QLabel("Text scale:"))
+        self.font_scale_combo = QComboBox()
+        self.font_scale_combo.addItems(
+            ["Compact (12px)", "Standard (13px)", "Large (14px)",
+             "Extra Large (16px)"])
+        self.font_scale_combo.setCurrentIndex(
+            {12: 0, 13: 1, 14: 2, 16: 3}.get(self.font_scale, 1))
+        self.font_scale_combo.currentIndexChanged.connect(
+            self._on_font_scale_changed)
+        options_row.addWidget(self.font_scale_combo)
+        options_row.addStretch()
+        appearance_layout.addLayout(options_row)
+        layout.addWidget(appearance)
+
+        # ----------------------------------------------------
+        # Scan & engine preferences
+        # ----------------------------------------------------
+        engine = QGroupBox("Scan & Engine Preferences")
+        engine_layout = QVBoxLayout(engine)
+        engine_layout.setSpacing(12)
+
+        proc_row = QHBoxLayout()
+        proc_lbl = QLabel("Windows process collector:")
+        proc_lbl.setFixedWidth(200)
+        self.process_mode_combo = QComboBox()
+        self.process_mode_combo.addItems([
+            "Fast & Resilient (tasklist with fallbacks)",
+            "Standard (tasklist only)",
+            "Deep query (adds executable paths)",
+        ])
+        self.process_mode_combo.setCurrentIndex(
+            PROCESS_COLLECTOR_MODES.index(self.process_collector_mode))
+        self.process_mode_combo.currentIndexChanged.connect(
+            self._on_process_mode_changed)
+        proc_row.addWidget(proc_lbl)
+        proc_row.addWidget(self.process_mode_combo, stretch=1)
+        engine_layout.addLayout(proc_row)
+
+        preview_row = QHBoxLayout()
+        preview_lbl = QLabel("Finding evidence preview cap:")
+        preview_lbl.setFixedWidth(200)
+        self.preview_limit_combo = QComboBox()
+        self.preview_limit_combo.addItems([
+            "5 entries per card",
+            "10 entries per card (default)",
+            "20 entries per card",
+            "Unlimited (show all records)",
+        ])
+        self.preview_limit_combo.setCurrentIndex(
+            {5: 0, 10: 1, 20: 2, 999999: 3}.get(
+                self.evidence_preview_limit, 1))
+        self.preview_limit_combo.currentIndexChanged.connect(
+            self._on_preview_limit_changed)
+        preview_row.addWidget(preview_lbl)
+        preview_row.addWidget(self.preview_limit_combo, stretch=1)
+        engine_layout.addLayout(preview_row)
+
+        timeout_row = QHBoxLayout()
+        timeout_lbl = QLabel("Public lookup network timeout:")
+        timeout_lbl.setFixedWidth(200)
+        self.timeout_combo = QComboBox()
+        self.timeout_combo.addItems([
+            "5 seconds (quick check)",
+            "10 seconds (standard, recommended)",
+            "20 seconds (deep lookup)",
+        ])
+        self.timeout_combo.setCurrentIndex(
+            {5: 0, 10: 1, 20: 2}.get(self.network_timeout, 1))
+        self.timeout_combo.currentIndexChanged.connect(self._on_timeout_changed)
+        timeout_row.addWidget(timeout_lbl)
+        timeout_row.addWidget(self.timeout_combo, stretch=1)
+        engine_layout.addLayout(timeout_row)
+        layout.addWidget(engine)
+
+        # ----------------------------------------------------
+        # Privacy & session controls
+        # ----------------------------------------------------
+        privacy = QGroupBox("Privacy & Session Controls")
+        privacy_layout = QVBoxLayout(privacy)
+        privacy_layout.setSpacing(10)
+
+        cache_row = QHBoxLayout()
+        self.cache_count_label = QLabel(self._get_cache_status_text())
+        cache_row.addWidget(self.cache_count_label, stretch=1)
+        clear_btn = QPushButton("Clear Cached Scan Results")
+        clear_btn.setIcon(icon("layers"))
+        clear_btn.clicked.connect(self.clear_all_cached_results)
+        cache_row.addWidget(clear_btn)
+        privacy_layout.addLayout(cache_row)
+
+        self.settings_status_label = QLabel("")
+        self.settings_status_label.setStyleSheet(f"color: {R('muted')};")
+        self.settings_status_label.setWordWrap(True)
+        privacy_layout.addWidget(self.settings_status_label)
+
+        privacy_note = QFrame()
+        privacy_note.setFrameShape(QFrame.NoFrame)
+        privacy_note.setStyleSheet(
+            f"QFrame {{ background-color: {R('panel_bg')}; "
+            f"border: 1px solid {R('panel_border')}; border-radius: 6px; }}"
+        )
+        note_row = QHBoxLayout(privacy_note)
+        note_row.setContentsMargins(10, 8, 10, 8)
+        note_row.setSpacing(10)
+        shield_icon = QLabel()
+        shield_icon.setPixmap(pixmap("shield", 24))
+        note_row.addWidget(shield_icon)
+        note_text = QLabel(
+            "<b>Local-first privacy:</b> system footprint scans, browser "
+            "extension traces, and file metadata extraction all run locally on "
+            "this computer. Only the Public Lookup checks you explicitly start "
+            "contact external services.")
+        note_text.setWordWrap(True)
+        note_row.addWidget(note_text, stretch=1)
+        privacy_layout.addWidget(privacy_note)
+        layout.addWidget(privacy)
+
+        # ----------------------------------------------------
+        # Diagnostics
+        # ----------------------------------------------------
+        diagnostics = QGroupBox("System Diagnostics")
+        diag_layout = QVBoxLayout(diagnostics)
+        diag_layout.setSpacing(8)
+
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        try:
+            import PySide6
+            qt_ver = f"PySide6 {getattr(PySide6, '__version__', 'unknown')}"
+        except Exception:
+            qt_ver = "PySide6 (version unknown)"
+        rows = [
+            ("Application:", "Digital Footprint Analyzer v1.0.0"),
+            ("Python runtime:",
+             f"{platform.python_version()} ({platform.python_implementation()})"),
+            ("GUI framework:", qt_ver),
+            ("Host system:",
+             f"{platform.system()} {platform.release()} ({platform.machine()})"),
+            ("Active theme:",
+             {"system": "System default", "light": "Light",
+              "dark": "Dark"}.get(self.current_theme, self.current_theme)),
+        ]
+        for i, (label, value) in enumerate(rows):
+            grid.addWidget(QLabel(f"<b>{label}</b>"), i, 0)
+            grid.addWidget(QLabel(html.escape(str(value))), i, 1)
+        diag_layout.addLayout(grid)
+
+        reset_row = QHBoxLayout()
+        reset_row.addStretch()
+        self.reset_btn = QPushButton("Reset All Settings to Defaults")
+        self.reset_btn.clicked.connect(self.reset_settings_to_defaults)
+        reset_row.addWidget(self.reset_btn)
+        diag_layout.addLayout(reset_row)
+        layout.addWidget(diagnostics)
         layout.addStretch()
+
+        scroll.setWidget(container)
+        outer.addWidget(scroll)
         self.pages.addWidget(page)
+
+    def _on_theme_radio_changed(self, mode):
+        self.set_theme_mode(mode)
+        self._notify_settings_changed(f"Theme updated to {mode}.")
+
+    def _on_contrast_toggled(self, checked):
+        self.high_contrast = bool(checked)
+        self.app_settings.setValue("high_contrast_selection", self.high_contrast)
+        self.apply_theme()
+        self._notify_settings_changed(
+            "High-contrast selection enabled" if self.high_contrast
+            else "Standard selection enabled")
+
+    def _on_font_scale_changed(self, index):
+        scales = [12, 13, 14, 16]
+        if 0 <= index < len(scales):
+            self.font_scale = scales[index]
+            self.app_settings.setValue("font_scale", self.font_scale)
+            self.apply_theme()
+            self._notify_settings_changed(
+                f"Text scale set to {self.font_scale}px")
+
+    def _on_process_mode_changed(self, index):
+        if 0 <= index < len(PROCESS_COLLECTOR_MODES):
+            self.process_collector_mode = PROCESS_COLLECTOR_MODES[index]
+            self.app_settings.setValue(
+                "process_collector_mode", self.process_collector_mode)
+            self._notify_settings_changed("Process collector saved")
+
+    def _on_preview_limit_changed(self, index):
+        limits = [5, 10, 20, 999999]
+        if 0 <= index < len(limits):
+            self.evidence_preview_limit = limits[index]
+            self.app_settings.setValue(
+                "evidence_preview_limit", self.evidence_preview_limit)
+            self._notify_settings_changed("Evidence preview cap updated")
+            for view_key in ("sys", "browser", "file", "full", "public"):
+                self._render_view_findings(view_key)
+
+    def _on_timeout_changed(self, index):
+        timeouts = [5, 10, 20]
+        if 0 <= index < len(timeouts):
+            self.network_timeout = timeouts[index]
+            self.app_settings.setValue("network_timeout", self.network_timeout)
+            self._notify_settings_changed(
+                f"Lookup timeout set to {self.network_timeout}s")
+
+    def _notify_settings_changed(self, message):
+        if hasattr(self, "settings_status_label"):
+            self.settings_status_label.setText(html.escape(str(message)))
+
+    def _get_cache_status_text(self):
+        count = sum(1 for v in self._last_results.values() if v is not None)
+        if not count:
+            return "No scan results are held in memory."
+        return f"{count} scan result(s) held in memory for this session."
+
+    def clear_all_cached_results(self):
+        """Drop every in-memory scan result and reset the affected views."""
+        self._last_results.clear()
+        self._expanded_cards.clear()
+        self._collapsed_evidence.clear()
+        self._expanded_evidence_records.clear()
+
+        for attr in ("sys_findings_area", "sys_results_area",
+                     "browser_findings_area", "browser_results_area",
+                     "file_findings_area", "file_results_area",
+                     "full_scan_findings_area", "full_scan_results_area",
+                     "public_findings_area", "results_area"):
+            area = getattr(self, attr, None)
+            if area is not None:
+                area.clear()
+
+        # Sub-tab titles carry the old counts, so reset them too.
+        for tabs_name, key in (("sys_sub_tabs", "sys"),
+                               ("browser_sub_tabs", "browser"),
+                               ("file_sub_tabs", "file"),
+                               ("full_scan_sub_tabs", "full"),
+                               ("public_sub_tabs", "public")):
+            tabs = getattr(self, tabs_name, None)
+            if tabs is not None:
+                tabs.setTabText(0, "Findings")
+                tabs.setTabText(1, "Collected Evidence")
+
+        for attr in ("sys_status_label", "browser_status_label",
+                     "file_status_label", "full_scan_status_label",
+                     "status_label"):
+            label = getattr(self, attr, None)
+            if label is not None:
+                label.setText("")
+
+        # The Full Scan file selection is also session state.
+        self.full_scan_file_path = None
+        self.full_scan_file_label.setText("No file selected")
+        self.full_scan_clear_btn.setEnabled(False)
+
+        self._refresh_dashboard_cache_state()
+        if hasattr(self, "cache_count_label"):
+            self.cache_count_label.setText(self._get_cache_status_text())
+        self._notify_settings_changed("All in-memory scan results cleared.")
+
+    def _refresh_dashboard_cache_state(self):
+        """Drop dashboard history that referenced the cleared results."""
+        self._scan_history = []
+        self._dashboard_summary = None
+
+    def reset_settings_to_defaults(self):
+        """Restore every preference and theme option to its default."""
+        self.current_theme = "dark"
+        self.high_contrast = True
+        self.font_scale = 13
+        self.evidence_preview_limit = FINDING_EVIDENCE_PREVIEW_LIMIT
+        self.process_collector_mode = DEFAULT_PROCESS_COLLECTOR_MODE
+        self.network_timeout = 10
+
+        self.app_settings.clear()
+        self.apply_theme()
+
+        # Keep the controls in sync with the restored values.
+        self.theme_dark_rb.setChecked(True)
+        self.contrast_checkbox.setChecked(True)
+        self.font_scale_combo.setCurrentIndex(1)
+        self.process_mode_combo.setCurrentIndex(
+            PROCESS_COLLECTOR_MODES.index(DEFAULT_PROCESS_COLLECTOR_MODE))
+        self.preview_limit_combo.setCurrentIndex(
+            {5: 0, 10: 1, 20: 2, 999999: 3}.get(
+                self.evidence_preview_limit, 1))
+        self.timeout_combo.setCurrentIndex(1)
+        self._notify_settings_changed("Settings reset to defaults.")
 
     def change_page(self, index):
         self.pages.setCurrentIndex(index)
@@ -1282,7 +1814,9 @@ class MainWindow(QMainWindow):
         self.sys_sub_tabs.setTabText(0, "Findings")
         self.sys_sub_tabs.setTabText(1, "Collected Evidence")
 
-        self.worker = ScanWorker("System", "")
+        self.worker = ScanWorker(
+            "System", "",
+            options={"process_mode": self.process_collector_mode})
         self.worker.result_ready.connect(self.on_scan_complete)
         self.worker.error_occurred.connect(self.on_scan_error)
         self.worker.start()
@@ -1321,7 +1855,9 @@ class MainWindow(QMainWindow):
         self.public_sub_tabs.setTabText(0, "Findings")
         self.public_sub_tabs.setTabText(1, "Collected Evidence")
 
-        self.worker = ScanWorker(scan_type, target)
+        self.worker = ScanWorker(
+            scan_type, target,
+            options={"network_timeout": float(self.network_timeout)})
         self.worker.result_ready.connect(self.on_scan_complete)
         self.worker.error_occurred.connect(self.on_scan_error)
         self.worker.start()
@@ -1610,7 +2146,10 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------
 
     def format_findings_html(self, findings, evidence_count=0, scan_status=None,
-                               expanded=frozenset(), summary=None):
+                               expanded=frozenset(), summary=None,
+                               preview_limit=None):
+        if preview_limit is None:
+            preview_limit = self.evidence_preview_limit
         """Formats the list of Finding objects into structured, restrained HTML cards with scan summary.
 
         Counting rules: total/concern/observation counts describe findings
@@ -1801,7 +2340,8 @@ class MainWindow(QMainWindow):
                             else "Informational observation")
             evidence_count_for_card = len(collect_finding_evidence_items(f.evidence))
             evidence_block = format_finding_evidence_html(
-                f.evidence, expanded=(card_index in expanded), card_index=card_index
+                f.evidence, preview_limit=preview_limit,
+                expanded=(card_index in expanded), card_index=card_index
             )
             evidence_heading = (
                 f"Evidence ({evidence_count_for_card} "
@@ -1849,7 +2389,9 @@ class MainWindow(QMainWindow):
 
         if coverage:
             coverage_blocks = [
-                self._format_coverage_block(f, card_index, card_index in expanded)
+                self._format_coverage_block(f, card_index,
+                                              card_index in expanded,
+                                              preview_limit=preview_limit)
                 for card_index, f in coverage
             ]
             cards.append(f"""
@@ -1866,7 +2408,8 @@ class MainWindow(QMainWindow):
         cards.append('</div>')
         return "\n".join(cards)
 
-    def _format_coverage_block(self, f, card_index, is_expanded):
+    def _format_coverage_block(self, f, card_index, is_expanded,
+                               preview_limit=None):
         """Render one coverage/limitation finding without duplicating data.
 
         Description lines render directly. The evidence box is skipped when
@@ -1925,7 +2468,7 @@ class MainWindow(QMainWindow):
             )
             evidence_html = f"""
                 <div style="background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; border-radius: 3px; padding: 4px 8px; margin-top: 5px; font-size: 11px; color: {R('text')}; word-break: break-all;">
-                    {format_finding_evidence_html(f.evidence, expanded=is_expanded, card_index=card_index)}
+                    {format_finding_evidence_html(f.evidence, preview_limit=preview_limit, expanded=is_expanded, card_index=card_index)}
                 </div>"""
 
         return f"""

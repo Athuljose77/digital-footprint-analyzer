@@ -1,11 +1,19 @@
 import httpx
 from urllib.parse import quote
 
+# Default network timeout for the XposedOrNot lookup, in seconds. Overridable
+# per call so the desktop Settings page timeout is actually honored.
+DEFAULT_TIMEOUT = 15.0
 
-async def check_email(email: str) -> dict:
+
+async def check_email(email: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """
     Check an email address against XposedOrNot
     and return detailed breach information.
+
+    Args:
+        email: address to check.
+        timeout: network timeout in seconds. None uses DEFAULT_TIMEOUT.
     """
 
     encoded_email = quote(
@@ -21,7 +29,7 @@ async def check_email(email: str) -> dict:
     try:
 
         async with httpx.AsyncClient(
-            timeout=15.0
+            timeout=DEFAULT_TIMEOUT if timeout is None else timeout
         ) as client:
 
             response = await client.get(url)

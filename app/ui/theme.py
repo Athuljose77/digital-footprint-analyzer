@@ -1,9 +1,12 @@
-"""Application theme: light report output plus a dark application theme.
+"""Application theme: color tokens, application chrome, and theme switching.
 
-The desktop UI follows the dark dashboard reference by default. All report
-HTML reads its colors through R() so the same formatters render correctly
-in both themes. Tests run with the light theme (the default) unless they
-explicitly enable dark mode.
+This module is the single source of truth for every color in the desktop UI.
+Report HTML reads colors through R(); widget chrome is built by build_qss()
+from the same token maps, so light and dark can never drift apart and no
+color is hardcoded in main_window.py.
+
+The desktop UI follows the dark dashboard reference by default. Tests run
+with the light theme unless they explicitly enable dark mode.
 """
 
 # Light values are the long-standing report colors and must stay exactly as
@@ -12,6 +15,10 @@ LIGHT_REPORT = {
     "text": "#24292e",
     "text_alt": "#333",
     "muted": "#586069",
+    # Chrome accent (sidebar/hero/card borders and buttons) is brand teal in
+    # both themes. It is deliberately independent of "link", which follows the
+    # report palette and differs per theme.
+    "accent": "#2dd4bf",
     "faint": "#888",
     "faint_alt": "#959da5",
     "faint_meta": "#6a737d",
@@ -62,6 +69,7 @@ DARK_REPORT = {
     "text": "#d7dee5",
     "text_alt": "#d7dee5",
     "muted": "#93a0ad",
+    "accent": "#2dd4bf",
     "faint": "#75808c",
     "faint_alt": "#75808c",
     "faint_meta": "#75808c",
@@ -109,7 +117,12 @@ DARK_REPORT = {
 
 assert set(LIGHT_REPORT) == set(DARK_REPORT), "theme maps diverged"
 
-_state = {"dark": False}
+# The module starts on the light report palette. A MainWindow switches
+# this to the saved user preference when one is built; tests and report
+# formatting rely on the light default unless they opt into dark.
+DEFAULT_DARK = False
+
+_state = {"dark": DEFAULT_DARK}
 
 
 def set_dark_theme(enabled=True):
@@ -127,127 +140,223 @@ def R(key):
     return active[key]
 
 
-DARK_QSS = """
-QMainWindow, QWidget#qt_scrollarea_viewport { background-color: #0d1319; }
-QWidget { color: #d7dee5; }
-QLabel { color: #d7dee5; background: transparent; }
-QListWidget {
-    background-color: #0d1319;
+# Application chrome values. These describe window surfaces rather than
+# report content, so they are resolved per theme instead of through R().
+_CHROME = {
+    True: {
+        "app_bg": "#0d1319",
+        "panel_bg": "#111a22",
+        "button_bg": "#16232d",
+        "button_hover": "#1c2c38",
+        "button_press": "#101820",
+        "selected_bg": "#16232d",
+        "scroll_handle": "#2a3a45",
+        "disabled": "#5b6672",
+        "tooltip_bg": "#111a22",
+    },
+    False: {
+        "app_bg": "#ffffff",
+        "panel_bg": "#f6f8fa",
+        "button_bg": "#f6f8fa",
+        "button_hover": "#e1e4e8",
+        "button_press": "#e9ecef",
+        "selected_bg": "#e1e4e8",
+        "scroll_handle": "#c1c7ce",
+        "disabled": "#959da5",
+        "tooltip_bg": "#fffffe",
+    },
+}
+
+# High-contrast selection colors (issue: white-on-white selection blocks).
+HIGH_CONTRAST_SELECTION = ("#2563eb", "#ffffff")
+STANDARD_SELECTION = ("#14b8a6", "#062a26")
+
+
+def build_qss(dark=True, high_contrast=True, font_scale=13):
+    """Build the application stylesheet for one theme from token values.
+
+    Every color is taken from the token maps or the chrome table above so
+    the light and dark themes stay in sync and no literal lives in a widget.
+    """
+    c = _CHROME[dark]
+    tokens = DARK_REPORT if dark else LIGHT_REPORT
+    text = tokens["text"]
+    muted = tokens["muted"]
+    border = tokens["panel_border"]
+    accent = tokens["accent"]
+    accent_text = tokens["link"]
+    sel_bg, sel_fg = HIGH_CONTRAST_SELECTION if high_contrast else STANDARD_SELECTION
+    # Font scaling is opt-in: at the default scale nothing is emitted, so the
+    # shipped appearance is exactly what it was before the setting existed.
+    scale_qss = ""
+    if font_scale != 13:
+        scale_qss = (
+            "\nQLabel, QPushButton, QLineEdit, QComboBox, QTextEdit, "
+            "QTextBrowser, QTableWidget { font-size: %dpx; }" % font_scale
+        )
+    return f"""
+QMainWindow, QWidget#qt_scrollarea_viewport {{ background-color: {c["app_bg"]}; }}
+QWidget {{ color: {text}; }}
+QLabel {{ color: {text}; background: transparent; }}
+QListWidget {{
+    background-color: {c["app_bg"]};
     border: none;
     outline: 0;
     font-size: 13px;
-}
-QListWidget::item { padding: 10px 12px; color: #93a0ad; }
-QListWidget::item:selected {
-    background-color: #16232d;
-    color: #2dd4bf;
-    border-left: 3px solid #2dd4bf;
+}}
+QListWidget::item {{ padding: 10px 12px; color: {muted}; }}
+QListWidget::item:hover {{ background-color: {c["button_hover"]}; color: {text}; }}
+QListWidget::item:selected {{
+    background-color: {c["selected_bg"]};
+    color: {accent_text};
+    border-left: 3px solid {accent};
     font-weight: bold;
-}
-QTabWidget::pane { border: 1px solid #24333f; background: #0d1319; }
-QTabBar::tab {
-    background: #111a22;
-    color: #93a0ad;
+}}
+QTabWidget::pane {{ border: 1px solid {border}; background: {c["app_bg"]}; }}
+QTabBar::tab {{
+    background: {c["panel_bg"]};
+    color: {muted};
     padding: 8px 16px;
-    border: 1px solid #24333f;
+    border: 1px solid {border};
     border-bottom: none;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
-}
-QTabBar::tab:selected { background: #16232d; color: #2dd4bf; }
-QPushButton {
-    background-color: #16232d;
-    color: #d7dee5;
-    border: 1px solid #2a3a45;
+}}
+QTabBar::tab:selected {{ background: {c["selected_bg"]}; color: {accent_text}; }}
+QPushButton {{
+    background-color: {c["button_bg"]};
+    color: {text};
+    border: 1px solid {border};
     border-radius: 6px;
     padding: 7px 14px;
-}
-QPushButton:hover { background-color: #1c2c38; border-color: #2dd4bf; }
-QPushButton:pressed { background-color: #101820; }
-QPushButton:disabled { color: #5b6672; background-color: #111a22; }
-QLineEdit, QComboBox {
-    background-color: #0d1319;
-    color: #d7dee5;
-    border: 1px solid #2a3a45;
+}}
+QPushButton:hover {{ background-color: {c["button_hover"]}; border-color: {accent}; }}
+QPushButton:pressed {{ background-color: {c["button_press"]}; }}
+QPushButton:disabled {{ color: {c["disabled"]}; background-color: {c["panel_bg"]}; }}
+QLineEdit, QComboBox {{
+    background-color: {c["app_bg"]};
+    color: {text};
+    border: 1px solid {border};
     border-radius: 6px;
     padding: 6px 10px;
-    selection-background-color: #14b8a6;
-}
-QLineEdit:focus, QComboBox:focus { border: 1px solid #2dd4bf; }
-QComboBox QAbstractItemView {
-    background-color: #111a22;
-    color: #d7dee5;
-    selection-background-color: #14b8a6;
-    selection-color: #062a26;
-}
-QTextEdit, QTextBrowser {
-    background-color: #0d1319;
-    color: #d7dee5;
-    border: 1px solid #24333f;
-    selection-background-color: #14b8a6;
-    selection-color: #062a26;
-}
-QTableWidget {
-    background-color: #0d1319;
-    color: #d7dee5;
-    gridline-color: #1c2833;
-    border: 1px solid #24333f;
-    selection-background-color: #14b8a6;
-    selection-color: #062a26;
-}
-QHeaderView::section {
-    background-color: #111a22;
-    color: #93a0ad;
+    selection-background-color: {sel_bg};
+    selection-color: {sel_fg};
+}}
+QLineEdit:focus, QComboBox:focus {{ border: 1px solid {accent}; }}
+QComboBox QAbstractItemView {{
+    background-color: {c["panel_bg"]};
+    color: {text};
+    selection-background-color: {sel_bg};
+    selection-color: {sel_fg};
+}}
+QTextEdit, QTextBrowser {{
+    background-color: {c["app_bg"]};
+    color: {text};
+    border: 1px solid {border};
+    selection-background-color: {sel_bg};
+    selection-color: {sel_fg};
+}}
+QTableWidget {{
+    background-color: {c["app_bg"]};
+    color: {text};
+    gridline-color: {border};
+    border: 1px solid {border};
+    selection-background-color: {sel_bg};
+    selection-color: {sel_fg};
+}}
+QHeaderView::section {{
+    background-color: {c["panel_bg"]};
+    color: {muted};
     border: none;
     padding: 6px;
     font-weight: bold;
-}
-QScrollBar:vertical, QScrollBar:horizontal { background: #0d1319; border: none; }
-QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
-    background: #2a3a45;
+}}
+QScrollBar:vertical, QScrollBar:horizontal {{ background: {c["app_bg"]}; border: none; }}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+    background: {c["scroll_handle"]};
     border-radius: 4px;
     min-height: 24px;
     min-width: 24px;
-}
-QScrollBar::handle:hover { background: #14b8a6; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
-QScrollBar::add-page, QScrollBar::sub-page { background: none; }
-QToolTip { background-color: #111a22; color: #d7dee5; border: 1px solid #2a3a45; }
-QDialog { background-color: #0d1319; }
-QFrame { color: #d7dee5; }
+}}
+QScrollBar::handle:hover {{ background: {accent}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+QToolTip {{ background-color: {c["tooltip_bg"]}; color: {text}; border: 1px solid {border}; }}
+QDialog {{ background-color: {c["app_bg"]}; }}
+QFrame {{ color: {text}; }}
+QGroupBox {{ border: 1px solid {border}; border-radius: 6px; margin-top: 10px; }}
+QGroupBox::title {{ subcontrol-origin: margin; color: {muted}; }}
+QCheckBox, QRadioButton {{ color: {text}; spacing: 6px; }}
+QCheckBox::indicator, QRadioButton::indicator {{ width: 15px; height: 15px; }}
+QScrollArea {{ background: {c["app_bg"]}; border: none; }}
+{scale_qss}
 """
 
 
-def apply_dark_theme(app):
-    """Apply the dark Fusion palette plus widget stylesheet to the app."""
+# Kept as module constants so existing callers and tests keep working.
+DARK_QSS = build_qss(dark=True)
+LIGHT_QSS = build_qss(dark=False)
+
+
+def apply_theme(app, dark=True, high_contrast=True, font_scale=13, target=None):
+    """Apply the Fusion palette and stylesheet for one theme.
+
+    Args:
+        app: the QApplication, used for the palette.
+        dark: select the dark token map when True.
+        high_contrast: use the high-contrast selection colors.
+        font_scale: base text size in px; 13 emits no font-size rule.
+        target: widget that receives the stylesheet. Defaults to the whole
+            application, which is right at startup. A MainWindow passes
+            itself so a theme switch restyles one window instead of every
+            live widget in the process, which is what makes switching cheap.
+    """
     from PySide6.QtGui import QColor, QPalette
+
+    tokens = DARK_REPORT if dark else LIGHT_REPORT
+    c = _CHROME[dark]
+    sel_bg, sel_fg = HIGH_CONTRAST_SELECTION if high_contrast else STANDARD_SELECTION
 
     app.setStyle("Fusion")
     palette = QPalette()
-    base = QColor("#0d1319")
-    panel = QColor("#111a22")
-    text = QColor("#d7dee5")
-    muted = QColor("#93a0ad")
-    accent = QColor("#14b8a6")
+    base = QColor(c["app_bg"])
+    panel = QColor(c["panel_bg"])
+    text = QColor(tokens["text"])
+    muted = QColor(tokens["muted"])
     palette.setColor(QPalette.Window, base)
     palette.setColor(QPalette.WindowText, text)
     palette.setColor(QPalette.Base, base)
     palette.setColor(QPalette.AlternateBase, panel)
     palette.setColor(QPalette.Text, text)
-    palette.setColor(QPalette.Button, QColor("#16202a"))
+    palette.setColor(QPalette.Button, QColor(c["button_bg"]))
     palette.setColor(QPalette.ButtonText, text)
-    palette.setColor(QPalette.BrightText, QColor("#f87171"))
-    palette.setColor(QPalette.Highlight, accent)
-    palette.setColor(QPalette.HighlightedText, QColor("#062a26"))
+    palette.setColor(QPalette.BrightText, QColor(tokens["err_text"]))
+    palette.setColor(QPalette.Highlight, QColor(sel_bg))
+    palette.setColor(QPalette.HighlightedText, QColor(sel_fg))
     palette.setColor(QPalette.ToolTipBase, panel)
     palette.setColor(QPalette.ToolTipText, text)
     palette.setColor(QPalette.PlaceholderText, muted)
-    palette.setColor(QPalette.Link, QColor("#2dd4bf"))
-    palette.setColor(QPalette.LinkVisited, QColor("#2dd4bf"))
-    disabled = QColor("#5b6672")
+    palette.setColor(QPalette.Link, QColor(tokens["link"]))
+    palette.setColor(QPalette.LinkVisited, QColor(tokens["link"]))
+    disabled = QColor(c["disabled"])
     palette.setColor(QPalette.Disabled, QPalette.Text, disabled)
     palette.setColor(QPalette.Disabled, QPalette.ButtonText, disabled)
     palette.setColor(QPalette.Disabled, QPalette.WindowText, disabled)
     app.setPalette(palette)
-    app.setStyleSheet(DARK_QSS)
-    set_dark_theme(True)
+    qss = build_qss(dark=dark, high_contrast=high_contrast,
+                    font_scale=font_scale)
+    (target if target is not None else app).setStyleSheet(qss)
+    set_dark_theme(dark)
+    return dark
+
+
+def apply_dark_theme(app, high_contrast=True, font_scale=13):
+    """Apply the dark Fusion palette plus widget stylesheet to the app."""
+    return apply_theme(app, dark=True, high_contrast=high_contrast,
+                       font_scale=font_scale)
+
+
+def apply_light_theme(app, high_contrast=True, font_scale=13):
+    """Apply the light Fusion palette plus widget stylesheet to the app."""
+    return apply_theme(app, dark=False, high_contrast=high_contrast,
+                       font_scale=font_scale)

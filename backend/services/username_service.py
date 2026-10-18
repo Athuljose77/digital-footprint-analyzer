@@ -8,10 +8,15 @@ from urllib.parse import urlparse
 TIMEOUT_SECONDS = 90
 
 
-def run_sherlock(username: str):
+def run_sherlock(username: str, timeout: float = None):
     """
     Run Sherlock using the same Python interpreter
     that is running the backend.
+
+    Args:
+        username: handle to look up.
+        timeout: overall budget in seconds for the subprocess. None uses
+            TIMEOUT_SECONDS, so existing callers are unaffected.
     """
 
     command = [
@@ -31,16 +36,21 @@ def run_sherlock(username: str):
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=TIMEOUT_SECONDS,
+        timeout=TIMEOUT_SECONDS if timeout is None else timeout,
     )
 
     return result
 
 
-async def check_username(username: str) -> dict:
+async def check_username(username: str, timeout: float = None) -> dict:
     """
     Search for a username across public platforms
     using Sherlock.
+
+    Args:
+        username: handle to look up.
+        timeout: overall budget in seconds for the search. None uses
+            TIMEOUT_SECONDS, so existing callers are unaffected.
     """
 
     username = username.strip()
@@ -72,7 +82,8 @@ async def check_username(username: str) -> dict:
     try:
         result = await asyncio.to_thread(
             run_sherlock,
-            username
+            username,
+            timeout
         )
 
     except subprocess.TimeoutExpired:

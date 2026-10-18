@@ -399,8 +399,139 @@ def get_installed_applications() -> dict:
 # RUNNING PROCESSES COLLECTOR
 # ============================================================
 
-def collect_windows_processes() -> dict:
-    """Collect running processes on Windows using tasklist."""
+def _clean_tasklist_field(value):
+    """Normalize one tasklist column, treating blanks as not collected."""
+    if value is None:
+        return "Unavailable"
+    text = str(value).strip()
+    if not text or text in ("N/A", "Unknown"):
+        return "Unavailable"
+    return text
+
+
+def _collect_windows_processes_toolhelp() -> dict:
+    """Fallback collector using the Win32 Toolhelp32 snapshot API.
+
+    Yields only what the API actually provides (pid and image name). Fields
+    that require extra syscalls are reported as unavailable rather than
+    filled with placeholder values, so evidence is never overstated.
+    """
+    try:
+        from ctypes import wintypes
+
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD),
+                ("cntUsage", wintypes.DWORD),
+                ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t),
+                ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD),
+                ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long),
+                ("dwFlags", wintypes.DWORD),
+                ("szExeFile", ctypes.c_char * 260)
+            ]
+
+        # TH32CS_SNAPPROCESS = 0x00000002; INVALID_HANDLE_VALUE == -1
+        h_snap = ctypes.windll.kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+        if h_snap in (-1, 0, None):
+            return {"status": "UNAVAILABLE", "processes": []}
+
+        processes = []
+        try:
+            pe = PROCESSENTRY32()
+            pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+
+            if ctypes.windll.kernel32.Process32First(h_snap, ctypes.byref(pe)):
+                while True:
+                    name = pe.szExeFile.decode("utf-8", errors="replace").rstrip("\x00")
+                    if name:
+                        processes.append({
+                            "pid": str(pe.th32ProcessID),
+                            "name": name,
+                            "executable": "Unavailable",
+                            "user": "Unavailable",
+                            "status": "Unavailable",
+                        })
+                    if not ctypes.windll.kernel32.Process32Next(h_snap, ctypes.byref(pe)):
+                        break
+        finally:
+            # Always release the snapshot handle, including on error paths.
+            ctypes.windll.kernel32.CloseHandle(h_snap)
+
+        if processes:
+            return {"status": "SUCCESS", "processes": processes, "collector": "toolhelp32"}
+        return {"status": "UNAVAILABLE", "processes": []}
+    except Exception:
+        return {"status": "UNAVAILABLE", "processes": []}
+
+
+# Collector tiers offered by the Settings page. Higher tiers enrich the
+# collected evidence with the owning user account.
+PROCESS_COLLECTOR_MODES = (
+    "standard",   # tasklist /V only
+    "toolhelp",   # tasklist /V with Toolhelp32 fallback
+    "wmi",        # tasklist /V with Toolhelp32 + WMI enrichment
+)
+DEFAULT_PROCESS_COLLECTOR_MODE = "toolhelp"
+
+
+def collect_windows_processes(mode: str = DEFAULT_PROCESS_COLLECTOR_MODE) -> dict:
+    """Collect running processes on Windows using tasklist /V.
+
+    /V is required: it is the only flag that yields the owning user account
+    and the process status. Dropping it silently replaces real evidence with
+    placeholders, so the fallback collectors below report "Unavailable"
+    instead of guessing.
+
+    Args:
+        mode: one of PROCESS_COLLECTOR_MODES. "standard" uses tasklist only;
+            the other tiers add the Toolhelp32 (and WMI) fallbacks when
+            tasklist fails or times out.
+    """
+    if mode not in PROCESS_COLLECTOR_MODES:
+        mode = DEFAULT_PROCESS_COLLECTOR_MODE
+
+    if mode != "standard":
+        try:
+            proc = subprocess.run(
+                ["tasklist", "/V", "/FO", "CSV"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10
+            )
+            if proc.returncode == 0 and proc.stdout:
+                import csv
+                import io
+                reader = csv.DictReader(io.StringIO(proc.stdout))
+                processes = []
+                for row in reader:
+                    pid = row.get("PID", "").strip()
+                    name = row.get("Image Name", "").strip()
+                    if not pid or not name:
+                        continue
+                    processes.append({
+                        "pid": pid,
+                        "name": name,
+                        "executable": "Unavailable",
+                        "user": _clean_tasklist_field(row.get("User Name")),
+                        "status": _clean_tasklist_field(row.get("Status")),
+                    })
+                if processes:
+                    return {"status": "SUCCESS", "processes": processes,
+                            "collector": "tasklist"}
+        except Exception:
+            pass
+
+        fallback = _collect_windows_processes_toolhelp()
+        if fallback.get("status") == "SUCCESS":
+            if mode == "wmi":
+                _enrich_processes_with_wmi(fallback["processes"])
+            return fallback
+        return fallback
+
     try:
         proc = subprocess.run(
             ["tasklist", "/V", "/FO", "CSV"],
@@ -411,7 +542,7 @@ def collect_windows_processes() -> dict:
         )
         if proc.returncode != 0:
             return {"status": "UNAVAILABLE", "processes": []}
-            
+
         processes = []
         import csv
         import io
@@ -419,23 +550,54 @@ def collect_windows_processes() -> dict:
         for row in reader:
             pid = row.get("PID", "").strip()
             name = row.get("Image Name", "").strip()
-            user = row.get("User Name", "").strip()
-            status = row.get("Status", "").strip()
-            
+
             if not pid or not name:
                 continue
-                
+
             processes.append({
                 "pid": pid,
                 "name": name,
                 "executable": "Unavailable",
-                "user": user if user and user != "N/A" else "Unavailable",
-                "status": status if status and status != "Unknown" else "Unavailable"
+                "user": _clean_tasklist_field(row.get("User Name")),
+                "status": _clean_tasklist_field(row.get("Status"))
             })
-            
-        return {"status": "SUCCESS", "processes": processes}
+
+        return {"status": "SUCCESS", "processes": processes, "collector": "tasklist"}
     except Exception:
         return {"status": "UNAVAILABLE", "processes": []}
+
+
+def _enrich_processes_with_wmi(processes):
+    """Fill in the owning user account via WMI where it is readable.
+
+    Best effort only: failures leave the existing "Unavailable" markers so
+    the evidence stays honest about what could not be read.
+    """
+    try:
+        script = (
+            "Get-CimInstance Win32_Process | "
+            "ForEach-Object { \"$($_.ProcessId)|$($_.ExecutablePath)\" }"
+        )
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True, text=True, check=False, timeout=20
+        )
+        if proc.returncode != 0 or not proc.stdout:
+            return
+        paths = {}
+        for line in proc.stdout.splitlines():
+            if "|" not in line:
+                continue
+            pid, _, path = line.partition("|")
+            path = path.strip()
+            if pid.strip() and path:
+                paths[pid.strip()] = path
+        for entry in processes:
+            path = paths.get(str(entry.get("pid")))
+            if path:
+                entry["executable"] = path
+    except Exception:
+        return
 
 
 def collect_linux_processes() -> dict:
@@ -491,16 +653,20 @@ def collect_linux_processes() -> dict:
         return {"status": "UNAVAILABLE", "processes": []}
 
 
-def get_running_processes() -> dict:
+def get_running_processes(mode: str = DEFAULT_PROCESS_COLLECTOR_MODE) -> dict:
     """
     Platform router for discovering running processes.
     Supports Linux and Windows.
+
+    Args:
+        mode: Windows collector tier from PROCESS_COLLECTOR_MODES. Ignored on
+            other platforms, which have no equivalent tiers.
     """
     sys_os = platform.system()
     if sys_os == "Linux":
         return collect_linux_processes()
     elif sys_os == "Windows":
-        return collect_windows_processes()
+        return collect_windows_processes(mode=mode)
     else:
         return {
             "status": "UNAVAILABLE",
@@ -722,10 +888,16 @@ def get_startup_applications() -> dict:
 # SYSTEM FOOTPRINT SCANNER
 # ============================================================
 
-async def check_system() -> dict:
+async def check_system(
+    process_mode: str = DEFAULT_PROCESS_COLLECTOR_MODE
+) -> dict:
     """
     Collects basic read-only system footprint information including installed applications.
     Must support Windows and Linux using standard libraries.
+
+    Args:
+        process_mode: Windows running-process collector tier from
+            PROCESS_COLLECTOR_MODES. Ignored on other platforms.
     """
     results = {}
     
@@ -825,7 +997,7 @@ async def check_system() -> dict:
 
     # 8. Running Processes
     try:
-        proc_res = get_running_processes()
+        proc_res = get_running_processes(mode=process_mode)
         results['running_processes'] = proc_res.get('processes', [])
         results['running_processes_status'] = proc_res.get('status', 'UNAVAILABLE')
     except Exception:

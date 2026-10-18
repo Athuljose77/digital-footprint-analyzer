@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QApplication
 import app.ui.main_window as main_window_module
 from app.ui.main_window import MainWindow
 from app.models.common import Finding, FootprintData, ScanResult
+from app.services.system_service import DEFAULT_PROCESS_COLLECTOR_MODE
 
 app = QApplication.instance()
 if app is None:
@@ -127,14 +128,23 @@ class TestHomeDashboard(unittest.TestCase):
     def test_system_card_starts_scan(self):
         with patch.object(main_window_module, "ScanWorker") as mock_worker_cls:
             self.window.home_cards["system"].click()
-        mock_worker_cls.assert_called_once_with("System", "")
+        # Scan type and target are the contract; the call also forwards the
+        # saved process-collector preference.
+        self.assertEqual(mock_worker_cls.call_count, 1)
+        args, kwargs = mock_worker_cls.call_args
+        self.assertEqual(args[0], "System")
+        self.assertEqual(args[1], "")
+        self.assertEqual(kwargs["options"]["process_mode"],
+                         DEFAULT_PROCESS_COLLECTOR_MODE)
         self.assertEqual(self.window.pages.currentIndex(), 1)
         self.assertEqual(self.window.my_footprint_tabs.currentIndex(), 0)
 
     def test_browser_card_starts_scan(self):
         with patch.object(main_window_module, "ScanWorker") as mock_worker_cls:
             self.window.home_cards["browser"].click()
-        mock_worker_cls.assert_called_once_with("Browser", "")
+        self.assertEqual(mock_worker_cls.call_count, 1)
+        args, _ = mock_worker_cls.call_args
+        self.assertEqual(args[0], "Browser")
 
     def test_file_card_navigates_without_starting(self):
         with patch.object(main_window_module, "ScanWorker") as mock_worker_cls:

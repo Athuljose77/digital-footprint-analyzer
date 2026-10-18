@@ -16,7 +16,14 @@ _BROWSER_UNAVAILABLE_MESSAGE = (
     "Browser footprint scanning is not available on this platform."
 )
 
-async def run_email_scan(email: str) -> ScanResult:
+async def run_email_scan(email: str, timeout: float = None) -> ScanResult:
+    """Run the Email exposure lookup.
+
+    Args:
+        email: address to look up.
+        timeout: optional network timeout in seconds from the Settings page.
+            None keeps the service default.
+    """
     scan_id = str(uuid.uuid4())
     result = ScanResult(
         scan_id=scan_id,
@@ -27,7 +34,7 @@ async def run_email_scan(email: str) -> ScanResult:
     )
     
     try:
-        data = await check_email(email)
+        data = await check_email(email, timeout=timeout)
         
         if data.get("status") == "ERROR":
             result.status = "ERROR"
@@ -72,7 +79,14 @@ async def run_email_scan(email: str) -> ScanResult:
         return result
 
 
-async def run_username_scan(username: str) -> ScanResult:
+async def run_username_scan(username: str, timeout: float = None) -> ScanResult:
+    """Run the Username public-presence lookup.
+
+    Args:
+        username: handle to look up.
+        timeout: optional search budget in seconds from the Settings page.
+            None keeps the service default.
+    """
     scan_id = str(uuid.uuid4())
     result = ScanResult(
         scan_id=scan_id,
@@ -83,7 +97,7 @@ async def run_username_scan(username: str) -> ScanResult:
     )
     
     try:
-        data = await check_username(username)
+        data = await check_username(username, timeout=timeout)
         if data.get("status") == "ERROR":
             result.status = "ERROR"
             result.message = data.get("message", "Unknown error")
@@ -121,7 +135,14 @@ async def run_username_scan(username: str) -> ScanResult:
 
 from app.services.system_service import check_system
 
-async def run_system_scan() -> ScanResult:
+async def run_system_scan(process_mode: str = None) -> ScanResult:
+    """Run the System Footprint scan.
+
+    Args:
+        process_mode: optional Windows running-process collector tier from
+            system_service.PROCESS_COLLECTOR_MODES. None keeps the service
+            default, so existing callers are unaffected.
+    """
     scan_id = str(uuid.uuid4())
     result = ScanResult(
         scan_id=scan_id,
@@ -132,7 +153,8 @@ async def run_system_scan() -> ScanResult:
     )
     
     try:
-        data = await check_system()
+        # None is handled inside the collector, which falls back to its default.
+        data = await check_system(process_mode=process_mode)
         
         if data.get("status") == "SUCCESS":
             result.status = "COMPLETED"
