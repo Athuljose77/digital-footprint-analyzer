@@ -142,30 +142,89 @@ def R(key):
 
 # Application chrome values. These describe window surfaces rather than
 # report content, so they are resolved per theme instead of through R().
+# The dark values carry the refined dashboard palette; the light values are
+# their equivalents so a theme switch stays visually symmetric.
 _CHROME = {
     True: {
         "app_bg": "#0d1319",
+        "sidebar_bg": "#0a111a",
+        "nav_item": "#7e9bb5",
+        "nav_item_hover_bg": "#111e2d",
+        "nav_selected_bg": "#0e2736",
+        "nav_selected_border": "#1a4954",
         "panel_bg": "#111a22",
-        "button_bg": "#16232d",
-        "button_hover": "#1c2c38",
-        "button_press": "#101820",
-        "selected_bg": "#16232d",
-        "scroll_handle": "#2a3a45",
+        "panel_border": "#1e3148",
+        "tab_bg": "#0f1c2b",
+        "tab_selected_bg": "#15273b",
+        "button_bg": "#121f2f",
+        "button_hover": "#182b40",
+        "button_hover_text": "#ffffff",
+        "button_press": "#0a121c",
         "disabled": "#5b6672",
-        "tooltip_bg": "#111a22",
+        "disabled_bg": "#0e1722",
+        "disabled_border": "#182736",
+        "input_bg": "#0a121c",
+        "input_border": "#1d334d",
+        "popup_bg": "#0e1a27",
+        "table_bg": "#0a121c",
+        "gridline": "#142436",
+        "header_bg": "#0f1c2b",
+        "scroll_bg": "#0a111a",
+        "scroll_handle": "#1d334d",
+        "tooltip_bg": "#0e1a27",
     },
     False: {
         "app_bg": "#ffffff",
+        "sidebar_bg": "#ffffff",
+        "nav_item": "#586069",
+        "nav_item_hover_bg": "#f0f3f6",
+        "nav_selected_bg": "#e3f5f2",
+        "nav_selected_border": "#9adfd6",
         "panel_bg": "#f6f8fa",
+        "panel_border": "#e1e4e8",
+        "tab_bg": "#f6f8fa",
+        "tab_selected_bg": "#e3f5f2",
         "button_bg": "#f6f8fa",
-        "button_hover": "#e1e4e8",
+        "button_hover": "#eef1f4",
+        "button_hover_text": "#24292e",
         "button_press": "#e9ecef",
-        "selected_bg": "#e1e4e8",
-        "scroll_handle": "#c1c7ce",
         "disabled": "#959da5",
+        "disabled_bg": "#f6f8fa",
+        "disabled_border": "#e1e4e8",
+        "input_bg": "#ffffff",
+        "input_border": "#d0d7de",
+        "popup_bg": "#ffffff",
+        "table_bg": "#ffffff",
+        "gridline": "#eaeef2",
+        "header_bg": "#f6f8fa",
+        "scroll_bg": "#f0f3f6",
+        "scroll_handle": "#c1c7ce",
         "tooltip_bg": "#fffffe",
     },
 }
+
+def _rgba(hex_color, alpha):
+    """Convert a #rrggbb token to an rgba() string for translucent fills."""
+    h = hex_color.lstrip("#")
+    return "rgba(%d, %d, %d, %s)" % (
+        int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), alpha)
+
+
+def accent_soft(alpha=0.08):
+    """Translucent accent fill, used behind accent-coloured buttons."""
+    return _rgba(R("accent"), alpha)
+
+
+def on_accent():
+    """Text color placed on top of a solid accent fill (dark, both themes)."""
+    return _CHROME[is_dark()]["button_press"] if is_dark() else "#062a26"
+
+
+def panel_hover():
+    """Slightly lifted panel background used on hover."""
+    return _CHROME[is_dark()]["nav_item_hover_bg"] if is_dark() \
+        else _CHROME[False]["nav_item_hover_bg"]
+
 
 # High-contrast selection colors (issue: white-on-white selection blocks).
 HIGH_CONTRAST_SELECTION = ("#2563eb", "#ffffff")
@@ -175,8 +234,8 @@ STANDARD_SELECTION = ("#14b8a6", "#062a26")
 def build_qss(dark=True, high_contrast=True, font_scale=13):
     """Build the application stylesheet for one theme from token values.
 
-    Every color is taken from the token maps or the chrome table above so
-    the light and dark themes stay in sync and no literal lives in a widget.
+    Every color comes from the token maps or the chrome table, so the light
+    and dark themes stay in sync and no literal lives in a widget.
     """
     c = _CHROME[dark]
     tokens = DARK_REPORT if dark else LIGHT_REPORT
@@ -199,79 +258,106 @@ QMainWindow, QWidget#qt_scrollarea_viewport {{ background-color: {c["app_bg"]}; 
 QWidget {{ color: {text}; }}
 QLabel {{ color: {text}; background: transparent; }}
 QListWidget {{
-    background-color: {c["app_bg"]};
+    background-color: {c["sidebar_bg"]};
     border: none;
     outline: 0;
     font-size: 13px;
+    padding: 6px 0;
 }}
-QListWidget::item {{ padding: 10px 12px; color: {muted}; }}
-QListWidget::item:hover {{ background-color: {c["button_hover"]}; color: {text}; }}
+QListWidget::item {{
+    padding: 10px 14px;
+    color: {c["nav_item"]};
+    border-radius: 8px;
+    margin: 3px 6px;
+}}
+QListWidget::item:hover {{ background-color: {c["nav_item_hover_bg"]}; color: {text}; }}
 QListWidget::item:selected {{
-    background-color: {c["selected_bg"]};
+    background-color: {c["nav_selected_bg"]};
     color: {accent_text};
-    border-left: 3px solid {accent};
+    border: 1px solid {c["nav_selected_border"]};
     font-weight: bold;
 }}
-QTabWidget::pane {{ border: 1px solid {border}; background: {c["app_bg"]}; }}
+QTabWidget::pane {{
+    border: 1px solid {c["panel_border"]};
+    background: {c["app_bg"]};
+    border-radius: 6px;
+}}
 QTabBar::tab {{
-    background: {c["panel_bg"]};
-    color: {muted};
-    padding: 8px 16px;
-    border: 1px solid {border};
+    background: {c["tab_bg"]};
+    color: {c["nav_item"]};
+    padding: 8px 18px;
+    border: 1px solid {c["panel_border"]};
     border-bottom: none;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
+    margin-right: 2px;
 }}
-QTabBar::tab:selected {{ background: {c["selected_bg"]}; color: {accent_text}; }}
+QTabBar::tab:selected {{
+    background: {c["tab_selected_bg"]};
+    color: {accent_text};
+    border-bottom: 2px solid {accent};
+    font-weight: bold;
+}}
 QPushButton {{
     background-color: {c["button_bg"]};
     color: {text};
-    border: 1px solid {border};
+    border: 1px solid {tokens["panel_border"]};
     border-radius: 6px;
     padding: 7px 14px;
 }}
-QPushButton:hover {{ background-color: {c["button_hover"]}; border-color: {accent}; }}
+QPushButton:hover {{
+    background-color: {c["button_hover"]};
+    border-color: {accent};
+    color: {c["button_hover_text"]};
+}}
 QPushButton:pressed {{ background-color: {c["button_press"]}; }}
-QPushButton:disabled {{ color: {c["disabled"]}; background-color: {c["panel_bg"]}; }}
+QPushButton:disabled {{
+    color: {c["disabled"]};
+    background-color: {c["disabled_bg"]};
+    border-color: {c["disabled_border"]};
+}}
 QLineEdit, QComboBox {{
-    background-color: {c["app_bg"]};
+    background-color: {c["input_bg"]};
     color: {text};
-    border: 1px solid {border};
+    border: 1px solid {c["input_border"]};
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 6px 12px;
     selection-background-color: {sel_bg};
     selection-color: {sel_fg};
 }}
 QLineEdit:focus, QComboBox:focus {{ border: 1px solid {accent}; }}
 QComboBox QAbstractItemView {{
-    background-color: {c["panel_bg"]};
+    background-color: {c["popup_bg"]};
     color: {text};
+    border: 1px solid {c["input_border"]};
     selection-background-color: {sel_bg};
     selection-color: {sel_fg};
 }}
 QTextEdit, QTextBrowser {{
     background-color: {c["app_bg"]};
     color: {text};
-    border: 1px solid {border};
+    border: 1px solid {c["input_border"]};
+    border-radius: 6px;
     selection-background-color: {sel_bg};
     selection-color: {sel_fg};
 }}
 QTableWidget {{
-    background-color: {c["app_bg"]};
+    background-color: {c["table_bg"]};
     color: {text};
-    gridline-color: {border};
-    border: 1px solid {border};
-    selection-background-color: {sel_bg};
-    selection-color: {sel_fg};
+    gridline-color: {c["gridline"]};
+    border: 1px solid {c["input_border"]};
+    border-radius: 6px;
+    selection-background-color: {c["nav_selected_bg"]};
+    selection-color: {accent};
 }}
 QHeaderView::section {{
-    background-color: {c["panel_bg"]};
-    color: {muted};
+    background-color: {c["header_bg"]};
+    color: {c["nav_item"]};
     border: none;
-    padding: 6px;
+    padding: 8px 8px;
     font-weight: bold;
 }}
-QScrollBar:vertical, QScrollBar:horizontal {{ background: {c["app_bg"]}; border: none; }}
+QScrollBar:vertical, QScrollBar:horizontal {{ background: {c["scroll_bg"]}; border: none; }}
 QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
     background: {c["scroll_handle"]};
     border-radius: 4px;
@@ -281,10 +367,10 @@ QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
 QScrollBar::handle:hover {{ background: {accent}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
-QToolTip {{ background-color: {c["tooltip_bg"]}; color: {text}; border: 1px solid {border}; }}
+QToolTip {{ background-color: {c["tooltip_bg"]}; color: {text}; border: 1px solid {c["input_border"]}; }}
 QDialog {{ background-color: {c["app_bg"]}; }}
 QFrame {{ color: {text}; }}
-QGroupBox {{ border: 1px solid {border}; border-radius: 6px; margin-top: 10px; }}
+QGroupBox {{ border: 1px solid {c["panel_border"]}; border-radius: 6px; margin-top: 10px; }}
 QGroupBox::title {{ subcontrol-origin: margin; color: {muted}; }}
 QCheckBox, QRadioButton {{ color: {text}; spacing: 6px; }}
 QCheckBox::indicator, QRadioButton::indicator {{ width: 15px; height: 15px; }}

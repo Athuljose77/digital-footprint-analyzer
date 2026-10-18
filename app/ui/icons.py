@@ -79,12 +79,66 @@ _ICONS = {
         '<path d="M12 2.8c-3.6 0-6 2.6-6 6 0 2.1 1 3.6 2.2 4.7.8.8 1.3 1.4 1.3 2.5h5c0-1.1.5-1.7 1.3-2.5 1.2-1.1 2.2-2.6 2.2-4.7 0-3.4-2.4-6-6-6z" '
         'fill="none" stroke="{c}" stroke-width="2" stroke-linejoin="round"/>'
     ),
+    "chart": (
+        '<path d="M4 19h16M7 16V11M12 16V6M17 16v-4" stroke="{c}" stroke-width="2" '
+        'stroke-linecap="round"/>'
+    ),
+    "grid": (
+        '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5" fill="none" stroke="{c}" stroke-width="2"/>'
+        '<rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" fill="none" stroke="{c}" stroke-width="2"/>'
+        '<rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" fill="none" stroke="{c}" stroke-width="2"/>'
+        '<rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" fill="none" stroke="{c}" stroke-width="2"/>'
+    ),
+    "window": (
+        '<rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="{c}" stroke-width="2"/>'
+        '<path d="M3.5 9h17M6.5 6.8h.01M9 6.8h.01" stroke="{c}" stroke-width="2" stroke-linecap="round"/>'
+    ),
+    "shield_check": (
+        '<path d="M12 2.8l7.5 3v6.1c0 4.6-3.2 7.7-7.5 9.3-4.3-1.6-7.5-4.7-7.5-9.3V5.8z" '
+        'fill="none" stroke="{c}" stroke-width="2" stroke-linejoin="round"/>'
+        '<path d="M8.8 12l2.3 2.3 4.1-4.5" fill="none" stroke="{c}" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
+    ),
+    "laptop_hero": "",
 }
 
 _renderers = {}
 
 
 def _document(name, color=ACCENT):
+    if name == "laptop_hero":
+        return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 130" width="240" height="130">
+  <defs>
+    <linearGradient id="screenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#081726"/>
+      <stop offset="100%" stop-color="#040a12"/>
+    </linearGradient>
+    <linearGradient id="cyanGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="100%" stop-color="{color}"/>
+    </linearGradient>
+  </defs>
+  <path d="M10 110 L230 110 M30 120 L210 120" stroke="#163248" stroke-width="1" stroke-opacity="0.6"/>
+  <polygon points="50,96 190,96 210,108 30,108" fill="#0e1f30" stroke="#224b6b" stroke-width="1.5"/>
+  <polygon points="85,99 155,99 150,105 90,105" fill="#162f47"/>
+  <polygon points="60,20 180,20 186,96 54,96" fill="url(#screenGrad)" stroke="{color}" stroke-width="2"/>
+  <path d="M120 38 l20 8 v18 c0 14 -10 23 -20 28 c-10 -5 -20 -14 -20 -28 v-18 z" fill="#092434" stroke="url(#cyanGlow)" stroke-width="2"/>
+  <path d="M113 72 c.5 -6 1 -12 2.2 -16 M117 73 c.4 -7 .8 -14 2 -18 M123 74 c.5 -6 1.2 -13 2.5 -17" fill="none" stroke="{color}" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="42" y1="35" x2="60" y2="45" stroke="{color}" stroke-width="1" stroke-dasharray="2,2" stroke-opacity="0.7"/>
+  <circle cx="42" cy="35" r="12" fill="#0c2132" stroke="{color}" stroke-width="1.5"/>
+  <circle cx="42" cy="32" r="3.5" fill="none" stroke="{color}" stroke-width="1.2"/>
+  <path d="M36 42 c0 -3 2.5 -4.5 6 -4.5 s6 1.5 6 4.5" fill="none" stroke="{color}" stroke-width="1.2"/>
+  <line x1="198" y1="35" x2="180" y2="45" stroke="{color}" stroke-width="1" stroke-dasharray="2,2" stroke-opacity="0.7"/>
+  <circle cx="198" cy="35" r="12" fill="#0c2132" stroke="{color}" stroke-width="1.5"/>
+  <path d="M192 32 h4 l2 2 h6 v7 h-12 z" fill="none" stroke="{color}" stroke-width="1.2"/>
+  <line x1="32" y1="80" x2="54" y2="80" stroke="{color}" stroke-width="1" stroke-dasharray="2,2" stroke-opacity="0.7"/>
+  <circle cx="32" cy="80" r="12" fill="#0c2132" stroke="{color}" stroke-width="1.5"/>
+  <ellipse cx="32" cy="76" rx="6" ry="2" fill="none" stroke="{color}" stroke-width="1"/>
+  <path d="M26 76 v4 c0 1.1 2.7 2 6 2 s6 -.9 6 -2 v-4 M26 80 v4 c0 1.1 2.7 2 6 2 s6 -.9 6 -2 v-4" fill="none" stroke="{color}" stroke-width="1"/>
+  <line x1="208" y1="78" x2="186" y2="78" stroke="{color}" stroke-width="1" stroke-dasharray="2,2" stroke-opacity="0.7"/>
+  <circle cx="208" cy="78" r="12" fill="#0c2132" stroke="{color}" stroke-width="1.5"/>
+  <path d="M202 73 h7 l4 4 v8 h-11 z" fill="none" stroke="{color}" stroke-width="1.2"/>
+</svg>'''
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
         f'viewBox="0 0 24 24">{_ICONS[name].format(c=color)}</svg>'
@@ -105,9 +159,10 @@ def icon(name, color=ACCENT):
 
 
 def pixmap(name, size, color=ACCENT):
-    """Render an icon to a square pixmap of the given pixel size."""
+    """Render an icon to a square or sized pixmap."""
     from PySide6.QtGui import QPainter
-    rendered = QPixmap(size, size)
+    w, h = (size, size) if isinstance(size, int) else size
+    rendered = QPixmap(w, h)
     rendered.fill(Qt.transparent)
     painter = QPainter(rendered)
     renderer(name, color).render(painter)

@@ -445,7 +445,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Digital Footprint Analyzer")
-        self.resize(850, 650)
+        self.resize(1120, 740)
 
         self.worker = None
         self.selected_file_path = None
@@ -497,23 +497,29 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(12)
 
         # Sidebar navigation with product branding header and footer.
         sidebar_container = QWidget()
-        sidebar_container.setFixedWidth(170)
+        sidebar_container.setFixedWidth(200)
         sidebar_layout = QVBoxLayout(sidebar_container)
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setSpacing(6)
+
         logo_row = QHBoxLayout()
+        logo_row.setSpacing(10)
         self.sidebar_emblem = QLabel()
-        self.sidebar_emblem.setPixmap(pixmap("shield", 34))
+        self.sidebar_emblem.setPixmap(pixmap("fingerprint", 36))
         logo_row.addWidget(self.sidebar_emblem)
-        self.sidebar_logo = QLabel("<b>Digital Footprint<br>Analyzer</b>")
+        self.sidebar_logo = QLabel("<b>Digital Footprint<br><span style='color: #2dd4bf;'>Analyzer</span></b>")
         self.sidebar_logo.setWordWrap(True)
         logo_row.addWidget(self.sidebar_logo, stretch=1)
         logo_widget = QWidget()
         logo_widget.setLayout(logo_row)
-        logo_widget.setStyleSheet("padding: 12px 8px 4px 8px;")
+        logo_widget.setStyleSheet("padding: 12px 10px 8px 10px;")
         sidebar_layout.addWidget(logo_widget)
+
         self.sidebar = QListWidget()
         self.sidebar.setIconSize(QSize(20, 20))
         for label, icon_name in (
@@ -526,12 +532,28 @@ class MainWindow(QMainWindow):
             self.sidebar.addItem(item)
         self.sidebar.currentRowChanged.connect(self.change_page)
         sidebar_layout.addWidget(self.sidebar, stretch=1)
-        self.sidebar_tagline = QLabel("Your privacy.<br>Your control.")
+
+        # Bottom footer tagline card (matches reference UI)
+        footer_frame = QFrame()
+        footer_frame.setObjectName("sidebar_footer")
+        footer_frame.setStyleSheet(
+            f"QFrame#sidebar_footer {{ background-color: {R('panel_bg')}; "
+            f"border: 1px solid {R('panel_border')}; border-radius: 8px; "
+            "margin: 8px 6px; padding: 6px; }"
+        )
+        footer_layout = QHBoxLayout(footer_frame)
+        footer_layout.setContentsMargins(6, 6, 6, 6)
+        footer_layout.setSpacing(8)
+        footer_icon = QLabel()
+        footer_icon.setPixmap(pixmap("shield_check", 22))
+        footer_layout.addWidget(footer_icon)
+        self.sidebar_tagline = QLabel("Your privacy.<br><b>Your control.</b>")
         self.sidebar_tagline.setWordWrap(True)
         self.register_themed_widget(
             self.sidebar_tagline,
-            "color: {faint}; padding: 4px 8px 12px 8px;")
-        sidebar_layout.addWidget(self.sidebar_tagline)
+            "color: {muted}; font-size: 11px;")
+        footer_layout.addWidget(self.sidebar_tagline, stretch=1)
+        sidebar_layout.addWidget(footer_frame)
         main_layout.addWidget(sidebar_container)
 
         # Stacked widget for pages
@@ -558,34 +580,43 @@ class MainWindow(QMainWindow):
         page.setWidgetResizable(True)
         content = QWidget()
         layout = QVBoxLayout(content)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(14)
 
+        # Hero banner row with high-tech laptop vector graphic and reference typography
         hero_row = QHBoxLayout()
+        hero_row.setSpacing(16)
         hero = QLabel(
-            f"<div style='font-size: 13px; color: {R('muted')};'>Welcome to</div>"
-            f"<div style='font-size: 24px; font-weight: bold;'>Digital Footprint "
+            f"<div style='font-size: 13px; color: {R('muted')}; margin-bottom: 2px;'>Welcome to</div>"
+            f"<div style='font-size: 26px; font-weight: bold;'>Digital Footprint "
             f"<span style='color: {R('accent')};'>Analyzer</span></div>"
-            f"<div style='font-size: 12px; color: {R('muted')};'>Understand your digital "
+            f"<div style='font-size: 12px; color: {R('muted')}; margin-top: 4px;'>Understand your digital "
             "footprint. Keep your data in your hands.</div>"
         )
         hero.setWordWrap(True)
         hero_row.addWidget(hero, stretch=1)
+
         self.hero_emblem = QLabel()
         self.hero_emblem.setAlignment(Qt.AlignCenter)
-        self.hero_emblem.setFixedSize(84, 84)
-        self.hero_emblem.setPixmap(pixmap("fingerprint", 76))
+        self.hero_emblem.setFixedSize(240, 130)
+        self.hero_emblem.setPixmap(pixmap("laptop_hero", (240, 130)))
         self.register_themed_widget(
             self.hero_emblem,
-            "border: 2px solid {accent}; border-radius: 42px; padding: 4px;")
+            "background: transparent; border: none; padding: 0;")
         hero_row.addWidget(self.hero_emblem)
+
         self.hero_tagline = QLabel(
+            "<div style='letter-spacing: 1px; line-height: 1.5; font-size: 10px; font-weight: bold;'>"
             "ANALYZE<br>DISCOVER<br>STAY INFORMED<br>STAY IN CONTROL"
+            "<div style='margin-top: 6px; width: 34px; height: 2px; background: #2dd4bf;'></div></div>"
         )
-        self.register_themed_widget(
-            self.hero_tagline, "font-size: 10px; color: {muted};")
+        self.register_themed_widget(self.hero_tagline, "color: {muted};")
         hero_row.addWidget(self.hero_tagline)
         layout.addLayout(hero_row)
 
+        # 4 Quick Scan cards
         cards_row = QHBoxLayout()
+        cards_row.setSpacing(12)
         self.home_cards = {}
         self.home_card_frames = {}
         for key, title, description, icon_name in (
@@ -612,80 +643,171 @@ class MainWindow(QMainWindow):
         self.home_cards["file"].clicked.connect(self._start_dashboard_file)
         self.home_cards["full"].clicked.connect(self._start_dashboard_full)
 
+        # Middle row: Footprint Overview (left) and Privacy Checklist (right)
         middle_row = QHBoxLayout()
-        overview_box = QVBoxLayout()
+        middle_row.setSpacing(12)
+
+        # Left Column: Footprint Overview Container Card
+        overview_card = QFrame()
+        overview_card.setObjectName("overview_card")
+        overview_card.setStyleSheet(
+            f"QFrame#overview_card {{ background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; "
+            "border-radius: 10px; }"
+        )
+        overview_box = QVBoxLayout(overview_card)
+        overview_box.setContentsMargins(14, 14, 14, 14)
+        overview_box.setSpacing(6)
+
         overview_header = QHBoxLayout()
-        overview_header.addWidget(QLabel("<b>Footprint Overview</b>"))
+        overview_icon = QLabel()
+        overview_icon.setPixmap(pixmap("chart", 20))
+        overview_header.addWidget(overview_icon)
+        overview_title = QLabel("<b>Footprint Overview</b>")
+        overview_title.setStyleSheet("font-size: 14px; color: #ffffff;")
+        overview_header.addWidget(overview_title)
         overview_header.addStretch()
+
         self.overview_scan_combo = QComboBox()
         self.overview_scan_combo.addItem("Last Scan")
-        self.overview_scan_combo.currentIndexChanged.connect(
-            self._on_overview_scan_changed)
+        self.overview_scan_combo.setMinimumWidth(120)
+        self.overview_scan_combo.currentIndexChanged.connect(self._on_overview_scan_changed)
         overview_header.addWidget(self.overview_scan_combo)
         overview_box.addLayout(overview_header)
-        overview_sub = QLabel("A summary of the last scan results.")
-        self.register_themed_widget(overview_sub, "color: {muted};")
+        overview_sub = QLabel("A summary of the last scan results. Run a scan to analyze your digital footprint.")
+        self.register_themed_widget(
+            overview_sub, "color: {muted}; font-size: 11px;")
         overview_sub.setWordWrap(True)
         overview_box.addWidget(overview_sub)
+
         self.dashboard_overview = QTextBrowser()
         self.dashboard_overview.setOpenLinks(False)
         self.dashboard_overview.setReadOnly(True)
-        self.dashboard_overview.setMinimumHeight(220)
+        self.dashboard_overview.setMinimumHeight(260)
+        self.dashboard_overview.setStyleSheet("border: none; background: transparent;")
         overview_box.addWidget(self.dashboard_overview, stretch=1)
-        middle_row.addLayout(overview_box, stretch=3)
+        middle_row.addWidget(overview_card, stretch=3)
 
-        checklist_box = QVBoxLayout()
-        checklist_box.addWidget(QLabel("<b>Privacy Checklist</b>"))
+        # Right Column: Privacy Checklist Container Card
+        checklist_card = QFrame()
+        checklist_card.setObjectName("checklist_card")
+        checklist_card.setStyleSheet(
+            f"QFrame#checklist_card {{ background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; "
+            "border-radius: 10px; }"
+        )
+        checklist_box = QVBoxLayout(checklist_card)
+        checklist_box.setContentsMargins(14, 14, 14, 14)
+        checklist_box.setSpacing(8)
+
+        checklist_header = QHBoxLayout()
+        checklist_icon = QLabel()
+        checklist_icon.setPixmap(pixmap("shield", 20))
+        checklist_header.addWidget(checklist_icon)
+        checklist_title = QLabel("<b>Privacy Checklist</b>")
+        checklist_title.setStyleSheet("font-size: 14px; color: #ffffff;")
+        checklist_header.addWidget(checklist_title)
+        checklist_header.addStretch()
+        checklist_box.addLayout(checklist_header)
+
         checklist_sub = QLabel("Simple steps to improve your privacy and reduce your exposure.")
-        self.register_themed_widget(checklist_sub, "color: {muted};")
+        self.register_themed_widget(
+            checklist_sub, "color: {muted}; font-size: 11px;")
         checklist_sub.setWordWrap(True)
         checklist_box.addWidget(checklist_sub)
+
         for title, sub, tab_index, row_icon in (
-            ("Review startup applications", "Disable applications you no longer need.", 0, "shield"),
-            ("Check browser extensions", "Remove unnecessary or unfamiliar extensions.", 1, "globe"),
+            ("Review startup applications", "Disable applications you no longer need.", 0, "shield_check"),
+            ("Check browser extensions", "Remove unnecessary or unfamiliar extensions.", 1, "window"),
             ("Be mindful when sharing files", "Metadata can reveal more information than you might expect.", 2, "document"),
         ):
             row = QFrame()
+            row_id = f"checklist_row_{tab_index}"
+            row.setObjectName(row_id)
             row.setFrameShape(QFrame.NoFrame)
             self.register_themed_widget(
                 row,
-                "QFrame {{ background-color: {panel_bg}; "
+                "QFrame#" + row_id +
+                " {{ background-color: {panel_bg}; "
                 "border: 1px solid {panel_border}; border-radius: 6px; }}")
             row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(10, 6, 10, 6)
+            row_layout.setSpacing(10)
             row_icon_label = QLabel()
-            row_icon_label.setPixmap(pixmap(row_icon, 26))
+            row_icon_label.setPixmap(pixmap(row_icon, 22))
             row_layout.addWidget(row_icon_label)
             text = QLabel(f"<b>{html.escape(title)}</b><br>"
-                          f"<span style='color: {R("muted")};'>{html.escape(sub)}</span>")
+                          f"<span style='color: {R('muted')}; font-size: 11px;'>{html.escape(sub)}</span>")
             text.setWordWrap(True)
             row_layout.addWidget(text, stretch=1)
             go_btn = QPushButton("›")
-            go_btn.setFixedSize(28, 28)
+            go_btn.setFixedSize(30, 30)
             self.register_themed_widget(
                 go_btn,
-                "border: 1px solid {accent}; border-radius: 14px; "
-                "font-size: 15px; font-weight: bold; color: {accent};")
+                "QPushButton {{ border: 1px solid {accent}; border-radius: 15px; "
+                "font-size: 16px; font-weight: bold; color: {accent}; "
+                "background-color: {accent_soft}; padding: 0px; text-align: center; }} "
+                "QPushButton:hover {{ background-color: {accent}; color: {on_accent}; }}")
             go_btn.clicked.connect(
                 lambda _checked=False, tab=tab_index: self._goto_my_footprint_tab(tab)
             )
             row_layout.addWidget(go_btn)
             checklist_box.addWidget(row)
-        tip = QLabel("<i>Tip: Run a Full Scan periodically to get a complete "
-                     "overview of your digital footprint.</i>")
+
+        tip_frame = QFrame()
+        tip_frame.setObjectName("tip_frame")
+        tip_frame.setStyleSheet(
+            f"QFrame#tip_frame {{ background-color: {R('panel_bg')}; border: 1px solid {R('panel_border')}; "
+            "border-radius: 6px; padding: 4px; }"
+        )
+        tip_layout = QHBoxLayout(tip_frame)
+        tip_layout.setContentsMargins(10, 8, 10, 8)
+        tip_layout.setSpacing(10)
+        tip_icon = QLabel()
+        tip_icon.setPixmap(pixmap("lightbulb", 22, "#fbbf24"))
+        tip_layout.addWidget(tip_icon)
+        tip = QLabel("<b>Tip:</b> Run a Full Scan periodically to get a complete "
+                     "overview of your digital footprint.")
         tip.setWordWrap(True)
-        self.register_themed_widget(tip, "color: {muted};")
-        checklist_box.addWidget(tip)
+        self.register_themed_widget(
+            tip, "color: {muted}; font-size: 11px;")
+        tip_layout.addWidget(tip, stretch=1)
+        checklist_box.addWidget(tip_frame)
         checklist_box.addStretch()
-        middle_row.addLayout(checklist_box, stretch=2)
+        middle_row.addWidget(checklist_card, stretch=2)
         layout.addLayout(middle_row)
 
+        # Recent Scans Section (Bottom)
+        recent_card = QFrame()
+        recent_card.setObjectName("recent_card")
+        recent_card.setStyleSheet(
+            f"QFrame#recent_card {{ background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; "
+            "border-radius: 10px; }"
+        )
+        recent_box = QVBoxLayout(recent_card)
+        recent_box.setContentsMargins(14, 14, 14, 14)
+        recent_box.setSpacing(6)
+
         recent_row = QHBoxLayout()
-        recent_row.addWidget(QLabel("<b>Recent Scans</b>"))
+        recent_icon = QLabel()
+        recent_icon.setPixmap(pixmap("clock", 18))
+        recent_row.addWidget(recent_icon)
+        recent_title = QLabel("<b>Recent Scans</b>")
+        recent_title.setStyleSheet("font-size: 14px; color: #ffffff;")
+        recent_row.addWidget(recent_title)
         recent_row.addStretch()
+
         self.view_all_scans_btn = QPushButton("View All Scans ›")
+        self.view_all_scans_btn.setStyleSheet(
+            "QPushButton { border: 1px solid #1d334d; border-radius: 6px; padding: 5px 12px; font-size: 12px; } "
+            "QPushButton:hover { border-color: #2dd4bf; color: #2dd4bf; }"
+        )
         self.view_all_scans_btn.clicked.connect(self._open_history_dialog)
         recent_row.addWidget(self.view_all_scans_btn)
-        layout.addLayout(recent_row)
+        recent_box.addLayout(recent_row)
+
+        recent_sub = QLabel("Your latest scans are shown below.")
+        recent_sub.setStyleSheet(f"color: {R('muted')}; font-size: 11px; margin-bottom: 4px;")
+        recent_box.addWidget(recent_sub)
+
         self.recent_scans_table = QTableWidget(0, 6)
         self.recent_scans_table.setHorizontalHeaderLabels(
             ["Date & Time", "Scan Type", "Modules", "Findings", "Evidence Items", "Status"]
@@ -694,7 +816,8 @@ class MainWindow(QMainWindow):
         self.recent_scans_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.recent_scans_table.setSelectionMode(QTableWidget.NoSelection)
         self.recent_scans_table.setMaximumHeight(180)
-        layout.addWidget(self.recent_scans_table)
+        recent_box.addWidget(self.recent_scans_table)
+        layout.addWidget(recent_card)
 
         page.setWidget(content)
         self.pages.addWidget(page)
@@ -702,32 +825,38 @@ class MainWindow(QMainWindow):
 
     def _make_scan_card(self, title, description, icon_name="target"):
         card = QFrame()
-        # NoFrame: the native panel frame plus the stylesheet border rendered
-        # as an ugly double box, so only the stylesheet border is used.
+        card.setObjectName("scan_card")
         card.setFrameShape(QFrame.NoFrame)
         self.register_themed_widget(
             card,
-            "QFrame {{ background-color: {panel_bg_alt}; "
-            "border: 1px solid {panel_border}; border-radius: 8px; }} "
-            "QFrame:hover {{ border: 1px solid {accent}; }}")
+            "QFrame#scan_card {{ background-color: {panel_bg_alt}; "
+            "border: 1px solid {panel_border}; border-radius: 10px; padding: 6px; }} "
+            "QFrame#scan_card:hover {{ border: 1px solid {accent}; "
+            "background-color: {panel_hover}; }}")
         card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.setSpacing(6)
         icon_label = QLabel()
-        icon_label.setPixmap(pixmap(icon_name, 30))
+        icon_label.setPixmap(pixmap(icon_name, 28))
         card_layout.addWidget(icon_label)
         title_label = QLabel(f"<b>{html.escape(title)}</b>")
         title_label.setWordWrap(True)
+        title_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #ffffff;")
         card_layout.addWidget(title_label)
         desc_label = QLabel(html.escape(description))
         desc_label.setWordWrap(True)
-        self.register_themed_widget(desc_label, "color: {muted};")
+        self.register_themed_widget(
+            desc_label, "color: {muted}; font-size: 11px;")
         desc_label.setAlignment(Qt.AlignTop)
         card_layout.addWidget(desc_label, stretch=1)
         action_btn = QPushButton("›")
-        action_btn.setFixedSize(36, 36)
+        action_btn.setFixedSize(34, 34)
         self.register_themed_widget(
             action_btn,
-            "border: 1px solid {accent}; border-radius: 18px; "
-            "font-size: 18px; font-weight: bold; color: {accent};")
+            "QPushButton {{ border: 1px solid {accent}; border-radius: 17px; "
+            "font-size: 17px; font-weight: bold; color: {accent}; "
+            "background-color: {accent_soft}; padding: 0px; text-align: center; }} "
+            "QPushButton:hover {{ background-color: {accent}; color: {on_accent}; }}")
         card_layout.addWidget(action_btn, alignment=Qt.AlignRight)
         return card, action_btn
 
@@ -907,26 +1036,40 @@ class MainWindow(QMainWindow):
         else:
             modules_count = "1 / 1"
             modules_label = modules[0]["name"] if modules else "—"
+        concern_count = counts.get("Critical", 0) + counts.get("High", 0)
+        obs_count = counts.get("Medium", 0) + counts.get("Low", 0) + counts.get("Info", 0)
+        findings_note = f"{concern_count} concerns | {obs_count} observations"
+        wave_svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 30" width="100%" height="24" style="margin-bottom: -10px;">'
+            f'<path d="M 0,20 Q 60,5 120,20 T 240,15 T 380,24" fill="none" stroke="{R("link")}" stroke-width="1.6" stroke-opacity="0.45"/>'
+            f'<path d="M 0,25 Q 70,12 140,24 T 280,12 T 380,20" fill="none" stroke="{R("link")}" stroke-width="1.0" stroke-opacity="0.25"/>'
+            f'</svg>'
+        )
         return f"""
-        <div style="font-family: sans-serif; padding: 4px;">
-          <table width="100%" cellpadding="6" cellspacing="6" style="font-size: 12px; color: {R('text_alt')};">
+        <div style="font-family: sans-serif; padding: 2px;">
+          <table width="100%" cellpadding="6" cellspacing="5" style="font-size: 12px; color: {R('text_alt')};">
             <tr>
-              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};"><b>Total Findings</b><br>
-                <span style="font-size: 18px; font-weight: bold;">{summary["total_findings"]}</span><br>
-                <span style="font-size: 11px; color: {R('muted')};">collected findings</span></td>
-              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};"><b>Evidence Items</b><br>
-                <span style="font-size: 18px; font-weight: bold;">{summary["evidence_records"]:,}</span><br>
-                <span style="font-size: 11px; color: {R('muted')};">collected records</span></td>
-              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};"><b>Modules Scanned</b><br>
-                <span style="font-size: 18px; font-weight: bold;">{html.escape(modules_count)}</span><br>
-                <span style="font-size: 11px; color: {R('muted')};">{html.escape(modules_label)}</span></td>
-              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};"><b>Scan Status</b><br>
-                <span style="font-size: 18px; font-weight: bold; color: {status_color};">{html.escape(status or "—")}</span><br>
-                <span style="font-size: 11px; color: {R('muted')};">{html.escape(status_note)}</span></td>
+              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};">
+                <span style="font-size: 11px; color: {R('muted')};">Total Findings</span><br>
+                <span style="font-size: 17px; font-weight: bold; color: {R('text')};">{summary["total_findings"]}</span><br>
+                <span style="font-size: 10px; color: {R('muted')};">{findings_note}</span></td>
+              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};">
+                <span style="font-size: 11px; color: {R('muted')};">Evidence Items</span><br>
+                <span style="font-size: 17px; font-weight: bold; color: {R('text')};">{summary["evidence_records"]:,}</span><br>
+                <span style="font-size: 10px; color: {R('muted')};">collected records</span></td>
+              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')};">
+                <span style="font-size: 11px; color: {R('muted')};">Modules Scanned</span><br>
+                <span style="font-size: 17px; font-weight: bold; color: {R('text')};">{html.escape(modules_count)}</span><br>
+                <span style="font-size: 10px; color: {R('muted')};">{html.escape(modules_label)}</span></td>
+              <td style="border: 1px solid {R('panel_border')}; border-radius: 6px; background-color: {R('panel_bg')}; white-space: nowrap;">
+                <span style="font-size: 11px; color: {R('muted')};">Scan Status</span><br>
+                <span style="font-size: 16px; font-weight: bold; color: {status_color};">{html.escape(status or "—")}</span><br>
+                <span style="font-size: 10px; color: {R('muted')};">{html.escape(status_note)}</span></td>
             </tr>
           </table>
-          <div style="font-weight: bold; font-size: 12px; margin: 8px 0 4px;">Findings by severity</div>
-          <table cellpadding="0" cellspacing="0"><tr>{"".join(bars)}</tr></table>
+          <div style="font-weight: bold; font-size: 12px; margin: 10px 0 2px; color: {R('text')};">Findings by severity</div>
+          <div>{wave_svg}</div>
+          <table cellpadding="0" cellspacing="0" style="margin-top: 2px;"><tr>{"".join(bars)}</tr></table>
           {modules_html}
         </div>
         """
@@ -936,13 +1079,16 @@ class MainWindow(QMainWindow):
         table.setRowCount(len(entries))
         status_colors = {"COMPLETED": f"{R('ok_text')}", "PARTIAL": f"{R('warn_text')}", "ERROR": f"{R('err_text')}"}
         for row, entry in enumerate(entries):
-            values = [entry["time"], entry["scan_type"], entry["modules"],
+            dot = "● " if entry["status"] == "COMPLETED" else "▲ " if entry["status"] == "PARTIAL" else "■ "
+            values = [f"{dot}{entry['time']}", entry["scan_type"], entry["modules"],
                       str(entry["findings"]), f'{entry["evidence"]:,}',
-                      entry["status"]]
+                      entry["status"].capitalize() if entry["status"] else "—"]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if col == 5 and value in status_colors:
-                    item.setForeground(QColor(status_colors[value]))
+                if col == 0 and entry["status"] in status_colors:
+                    item.setForeground(QColor(status_colors[entry["status"]]))
+                elif col == 5 and entry["status"] in status_colors:
+                    item.setForeground(QColor(status_colors[entry["status"]]))
                 table.setItem(row, col, item)
 
     def _build_history_dialog(self):
@@ -1357,8 +1503,6 @@ class MainWindow(QMainWindow):
                               font_scale=self.font_scale, target=self)
         else:
             theme.set_dark_theme(dark)
-        # Clear any window-level sheet so the application stylesheet wins.
-        self.setStyleSheet("")
         self._refresh_home_theme()
         # Report HTML resolves colors through R() at build time, so every
         # rendered view must be rebuilt for a theme change to be visible.
@@ -1389,6 +1533,9 @@ class MainWindow(QMainWindow):
             muted=R("muted"),
             faint=R("faint"),
             accent=R("accent"),
+            accent_soft=theme.accent_soft(),
+            on_accent=theme.on_accent(),
+            panel_hover=theme.panel_hover(),
         )
 
     def _refresh_home_theme(self):
