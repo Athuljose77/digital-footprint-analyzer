@@ -1,0 +1,8 @@
+flowchart LR
+    clients["HTTP clients / web UI"] -->|"POST /analyze<br/>GET /username/name"| api["FastAPI app<br/>backend/app.py"]
+    api --> lim["services/limits<br/>single-flight + timeout"]
+    lim --> ana["services/analyzer<br/>validation + scoring"]
+    ana --> usv["username_service"]
+    ana --> eml["email_service"]
+    api --> rtr["routes/username"]
+    rtr --> usv

@@ -12,33 +12,7 @@ promises; this document shows how the code keeps them.
 
 ## System context
 
-```mermaid
-flowchart LR
-    user(["User"])
-
-    subgraph machine["Your computer — local-first"]
-        app["Desktop app<br/>PySide6 (app/)"]
-        data["Local data<br/>history.db · actions.db · exports"]
-        os["Operating system<br/>package databases, processes,<br/>startup entries, browser profiles,<br/>file metadata"]
-    end
-
-    subgraph net["Public internet — lookup scans only"]
-        platforms["Public platforms<br/>profile pages"]
-        breach["Email exposure check"]
-    end
-
-    api["Optional HTTP API<br/>FastAPI (backend/)"]
-    clients["Other HTTP clients"]
-
-    user --> app
-    app --> os
-    app --> data
-    app -->|"username scan:<br/>discovery + page verification"| platforms
-    app -->|"email scan"| breach
-    clients --> api
-    api --> platforms
-    api --> breach
-```
+[![System context diagram](diagrams/01-system-context.png)](diagrams/01-system-context.svg)
 
 The FastAPI backend is a thin HTTP wrapper around the *same* service modules
 the desktop app uses in-process (`backend/services/`). The desktop app never
@@ -46,77 +20,7 @@ needs the API running; it imports those services directly.
 
 ## Components
 
-```mermaid
-flowchart TB
-    user(["User"])
-
-    subgraph ui["Presentation — PySide6 (app/ui)"]
-        mw["MainWindow<br/>home dashboard · scan forms · theming"]
-        worker["ScanWorker (QThread)<br/>runs scans off the UI thread"]
-        pages["Pages<br/>Assessment · Evidence · Actions · History"]
-        theme["theme.py<br/>colour tokens + runtime switching"]
-    end
-
-    subgraph core["Orchestration — app/core"]
-        sc["scan_controller<br/>run_* scan runners"]
-        cov["scan_coverage<br/>per-module coverage"]
-    end
-
-    subgraph svc["Collectors and lookups"]
-        sysv["system_service<br/>OS · apps · processes · startup"]
-        brw["browser_service<br/>browser profiles"]
-        fms["file_metadata_service<br/>file metadata"]
-        eml["email_service<br/>email exposure check"]
-        usv["username_service<br/>discovery + page verification"]
-    end
-
-    subgraph analysis["Analysis"]
-        fp["findings_processor<br/>+ findings/rules"]
-        cat["startup_catalogue<br/>offline entry explanations"]
-        risk["risk<br/>exposure score (exposure-v1)"]
-        rem["remediation<br/>catalogue · engine · store"]
-    end
-
-    subgraph storage["Local storage"]
-        hist["history store<br/>SQLite history.db"]
-        acts["remediation store<br/>SQLite actions.db"]
-        prefs["QSettings<br/>theme & preferences"]
-    end
-
-    subgraph reporting["Reporting"]
-        rb["reporting/builder"]
-        exp["PDF · JSON · CSV exporters"]
-    end
-
-    models["models/common.py<br/>ScanResult · FootprintData · Finding · Risk"]
-
-    user --> mw
-    mw --> pages
-    mw --> theme
-    mw --> prefs
-    mw --> worker
-    worker --> sc
-    sc --> sysv
-    sc --> brw
-    sc --> fms
-    sc --> eml
-    sc --> usv
-    sc --> fp
-    sc --> cov
-    fp --> cat
-    mw -->|"after a scan finishes"| risk
-    mw --> rem
-    mw --> hist
-    rem --> acts
-    pages --> hist
-    pages -->|"export"| rb
-    rb --> exp
-    models -.-> sc
-    models -.-> fp
-    models -.-> risk
-    models -.-> hist
-    models -.-> rb
-```
+[![Component map](diagrams/02-components.png)](diagrams/02-components.svg)
 
 Every layer exchanges the plain data models in `app/models/common.py`
 (`ScanResult`, `FootprintData`, `Finding`, `Risk`, `Recommendation`), so the
@@ -124,34 +28,7 @@ UI, scoring, storage, and exporters all read the same objects.
 
 ## Scan lifecycle
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor U as User
-    participant MW as MainWindow
-    participant W as ScanWorker (QThread)
-    participant SC as scan_controller
-    participant SVC as Collectors / lookups
-    participant FP as FindingsProcessor
-    participant AS as Risk + remediation plan
-    participant ST as history.db
-    participant P as Pages
-
-    U->>MW: choose a scan and press Run
-    MW->>W: start ScanWorker(scan_type, target)
-    W->>SC: run_*_scan() in its own event loop
-    SC->>SVC: collect locally and/or look up publicly
-    SVC-->>SC: raw results
-    SC->>SC: map records to FootprintData
-    SC->>FP: process_scan_result / process_module_results
-    FP-->>SC: findings, evidence, coverage
-    SC-->>W: ScanResult
-    W-->>MW: result_ready signal
-    MW->>AS: build_risk_summary + build_plan
-    MW->>ST: record_scan(result, risk, target)
-    MW->>P: set_assessment / show_result / refresh
-    U->>P: review, act, export PDF/JSON/CSV
-```
+[![Scan lifecycle sequence diagram](diagrams/03-scan-lifecycle.png)](diagrams/03-scan-lifecycle.svg)
 
 `MainWindow._record_scan_assessment` is the single place a finished scan
 becomes an assessment: the score, the remediation plan, and the stored
@@ -160,19 +37,7 @@ can never disagree about the same scan.
 
 ### Full Scan aggregation
 
-```mermaid
-flowchart LR
-    fs["run_full_scan"] --> sysr["run_system_scan"]
-    fs --> brwr["run_browser_scan"]
-    fs --> filr["run_file_metadata_scan<br/>only when a file was chosen"]
-    sysr --> agg["process_module_results<br/>merge + deduplicate findings"]
-    brwr --> agg
-    filr --> agg
-    agg --> covq["coverage_from_module_results"]
-    agg --> pol{"any module PARTIAL,<br/>or browser unavailable?"}
-    pol -->|"yes"| partial["status PARTIAL<br/>with honest reasons"]
-    pol -->|"no"| done["status COMPLETED"]
-```
+[![Full Scan aggregation flow](diagrams/04-full-scan.png)](diagrams/04-full-scan.svg)
 
 A module that reports `PARTIAL` or `UNAVAILABLE` is surfaced as a limitation
 rather than silently dropped; coverage findings keep the gap visible in
@@ -197,16 +62,7 @@ scoring and reports.
 
 ## Backend API (optional)
 
-```mermaid
-flowchart LR
-    clients["HTTP clients / web UI"] -->|"POST /analyze<br/>GET /username/name"| api["FastAPI app<br/>backend/app.py"]
-    api --> lim["services/limits<br/>single-flight + timeout"]
-    lim --> ana["services/analyzer<br/>validation + scoring"]
-    ana --> usv["username_service"]
-    ana --> eml["email_service"]
-    api --> rtr["routes/username"]
-    rtr --> usv
-```
+[![Backend API request flow](diagrams/05-backend-api.png)](diagrams/05-backend-api.svg)
 
 Requests are validated before anything runs (the API starts subprocesses and
 makes outbound requests, so an unvalidated field would be a denial-of-service
@@ -227,6 +83,19 @@ errors are never dressed up as results.
   methodology limits, and coverage gaps are shown, not hidden.
 - **One theme system.** All colours flow through `app/ui/theme.py`; pages
   re-render HTML and re-apply templates on a runtime theme switch.
+
+## Diagram sources
+
+Every diagram above ships as a rendered PNG (click an image for the SVG) and
+as a Mermaid source file in `docs/diagrams/`. Regenerate both from the
+sources with:
+
+```bash
+for f in docs/diagrams/*.mmd; do
+  npx -y @mermaid-js/mermaid-cli@11 -i "$f" -o "${f%.mmd}.png" -b white -s 3
+  npx -y @mermaid-js/mermaid-cli@11 -i "$f" -o "${f%.mmd}.svg" -b white
+done
+```
 
 ## Related documents
 
