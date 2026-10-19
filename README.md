@@ -27,7 +27,8 @@ findings.
 | **History** | Persistent local scan history (SQLite) with comparison between scans: new, unchanged, modified, resolved, and not-rechecked issues. Delete single scans or clear everything. |
 
 **Docs:** [Risk methodology](docs/RISK_METHODOLOGY.md) ·
-[Privacy](docs/PRIVACY.md) · [Report schema](docs/REPORT_SCHEMA.md)
+[Privacy](docs/PRIVACY.md) · [Report schema](docs/REPORT_SCHEMA.md) ·
+[Architecture](docs/ARCHITECTURE.md)
 
 ## Running
 
