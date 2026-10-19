@@ -13,7 +13,7 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 )
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFrame, QLabel
 
 import app.ui.main_window as main_window_module
 from app.ui.main_window import MainWindow
@@ -278,6 +278,82 @@ class TestHomeDashboard(unittest.TestCase):
         html = self.window.dashboard_overview.toHtml()
         self.assertIn("Total Findings", html)
         self.assertIn("Critical", html)
+
+
+class TestHomeThemeRefresh(unittest.TestCase):
+    """Theme switches must re-color every Home widget with no stale mixing."""
+
+    def setUp(self):
+        from app.ui import theme
+
+        self.theme = theme
+        self._original_dark = theme.is_dark()
+        self.window = MainWindow()
+
+    def tearDown(self):
+        self.theme.set_dark_theme(self._original_dark)
+        self.window.close()
+
+    def _switch(self, dark):
+        """Reproduce a theme switch the way MainWindow.apply_theme does."""
+        self.theme.set_dark_theme(dark)
+        self.window._refresh_home_theme()
+
+    def test_titles_follow_the_theme(self):
+        self._switch(False)
+        light = self.theme.LIGHT_REPORT["text"]
+        for label in (self.window.overview_title, self.window.checklist_title,
+                      self.window.recent_title):
+            self.assertIn(light, label.styleSheet())
+            self.assertNotIn("#ffffff", label.styleSheet().lower())
+        card_titles = self.window.findChildren(QLabel, "scan_card_title")
+        self.assertEqual(len(card_titles), 4)
+        for label in card_titles:
+            self.assertIn(light, label.styleSheet())
+            self.assertNotIn("#ffffff", label.styleSheet().lower())
+
+        self._switch(True)
+        dark = self.theme.DARK_REPORT["text"]
+        for label in (self.window.overview_title, self.window.checklist_title,
+                      self.window.recent_title):
+            self.assertIn(dark, label.styleSheet())
+        for label in self.window.findChildren(QLabel, "scan_card_title"):
+            self.assertIn(dark, label.styleSheet())
+
+    def test_cards_and_hero_follow_the_theme(self):
+        frames = [self.window.findChild(QFrame, name) for name in
+                  ("overview_card", "checklist_card", "recent_card")]
+        self.assertTrue(all(frame is not None for frame in frames))
+
+        self._switch(True)
+        for frame in frames:
+            self.assertIn(self.theme.DARK_REPORT["panel_bg_alt"],
+                          frame.styleSheet())
+        self.assertIn(self.theme.DARK_REPORT["muted"],
+                      self.window.home_hero_label.text())
+        self.assertIn(self.theme.DARK_REPORT["panel_border"],
+                      self.window.view_all_scans_btn.styleSheet())
+
+        self._switch(False)
+        for frame in frames:
+            self.assertIn(self.theme.LIGHT_REPORT["panel_bg_alt"],
+                          frame.styleSheet())
+        self.assertIn(self.theme.LIGHT_REPORT["muted"],
+                      self.window.home_hero_label.text())
+        self.assertNotIn(self.theme.DARK_REPORT["muted"],
+                         self.window.home_hero_label.text())
+
+    def test_file_labels_reapply_their_state_on_switch(self):
+        label = self.window.full_scan_file_label
+        self.window._set_file_label(label, "holiday.jpg", True)
+
+        self._switch(True)
+        self.assertIn(self.theme.DARK_REPORT["black_text"], label.styleSheet())
+
+        self.window.clear_full_scan_file()
+        self._switch(False)
+        self.assertIn(self.theme.LIGHT_REPORT["faint"], label.styleSheet())
+        self.assertEqual(label.text(), "No file selected")
 
 
 if __name__ == "__main__":
