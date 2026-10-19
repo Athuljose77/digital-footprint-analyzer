@@ -299,7 +299,11 @@ class TestFindingsProcessor(unittest.TestCase):
         findings = FindingsProcessor.extract_module_findings("system", res)
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].finding_type, "System Configuration")
-        self.assertIn("Startup Footprint (2 detected)", findings[0].title)
+        self.assertEqual(findings[0].title, "Startup Programs (2 detected)")
+        # The description has to explain what the list is and what to do
+        # with it, not just restate the title.
+        self.assertIn("launch automatically", findings[0].description)
+        self.assertIn("startup settings", findings[0].description)
         self.assertEqual(findings[0].severity, "Low")
 
     def test_system_footprint_unavailable_startup_filtered_out(self):
@@ -695,7 +699,8 @@ class TestScanControllerIntegration(unittest.TestCase):
                 self.assertEqual(len(res.findings), 1)
                 finding = res.findings[0]
                 self.assertEqual(finding.finding_type, "System Configuration")
-                self.assertIn("Startup Footprint (2 detected)", finding.title)
+                self.assertEqual(finding.title, "Startup Programs (2 detected)")
+                self.assertIn("launch automatically", finding.description)
 
     def test_controller_file_metadata_scan_processes_sensitive_findings(self):
         mock_data = {

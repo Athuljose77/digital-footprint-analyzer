@@ -25,6 +25,19 @@ SEVERITY_DISPLAY = {
     "INFORMATIONAL": "Info",
 }
 
+# Shared wording for startup findings. Two extraction paths (footprint
+# conversion and the system dict extractor) build the same record, and the
+# text has to read clearly on a finding card and in a report even for someone
+# who does not know what an autostart entry is.
+STARTUP_FINDING_TITLE_TEMPLATE = "Startup Programs ({count} detected)"
+STARTUP_FINDING_DESCRIPTION = (
+    "These programs launch automatically when the system starts, so they "
+    "run every session even if you never open them. Many entries are normal "
+    "desktop tools such as keyrings, update notifiers, and accessibility "
+    "helpers, but review the list and disable anything you do not recognise "
+    "from your system's startup settings."
+)
+
 
 def _get_severity_rank(sev: Optional[str]) -> int:
     """Return numeric rank for severity comparison."""
@@ -561,8 +574,9 @@ class FindingsProcessor:
                 findings.append(Finding(
                     finding_id=str(uuid.uuid4()),
                     finding_type="System Configuration",
-                    title=f"Persistent Startup Footprint ({len(startup_apps)} detected)",
-                    description="Applications configured to start automatically on system boot were detected.",
+                    title=STARTUP_FINDING_TITLE_TEMPLATE.format(
+                        count=len(startup_apps)),
+                    description=STARTUP_FINDING_DESCRIPTION,
                     evidence=app_names,
                     severity=sev,
                     status="Informational"
@@ -646,8 +660,8 @@ class FindingsProcessor:
                 finding_id=str(uuid.uuid4()),
                 source_module="system",
                 finding_type="System Configuration",
-                title=f"Persistent Startup Footprint ({len(startups)} detected)",
-                description="Applications configured to start automatically on system boot were detected.",
+                title=STARTUP_FINDING_TITLE_TEMPLATE.format(count=len(startups)),
+                description=STARTUP_FINDING_DESCRIPTION,
                 evidence=names,
                 severity=sev,
                 status="Informational"
