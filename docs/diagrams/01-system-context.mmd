@@ -1,0 +1,25 @@
+flowchart LR
+    user(["User"])
+
+    subgraph machine["Your computer — local-first"]
+        app["Desktop app<br/>PySide6 (app/)"]
+        data["Local data<br/>history.db · actions.db · exports"]
+        os["Operating system<br/>package databases, processes,<br/>startup entries, browser profiles,<br/>file metadata"]
+    end
+
+    subgraph net["Public internet — lookup scans only"]
+        platforms["Public platforms<br/>profile pages"]
+        breach["Email exposure check"]
+    end
+
+    api["Optional HTTP API<br/>FastAPI (backend/)"]
+    clients["Other HTTP clients"]
+
+    user --> app
+    app --> os
+    app --> data
+    app -->|"username scan:<br/>discovery + page verification"| platforms
+    app -->|"email scan"| breach
+    clients --> api
+    api --> platforms
+    api --> breach

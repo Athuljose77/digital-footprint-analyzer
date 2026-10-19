@@ -1,0 +1,65 @@
+flowchart LR
+    user(["User"])
+
+    subgraph ui["Presentation — PySide6 (app/ui)"]
+        direction TB
+        mw["MainWindow<br/>home dashboard · scan forms · theming"]
+        worker["ScanWorker (QThread)<br/>runs scans off the UI thread"]
+        pages["Pages<br/>Assessment · Evidence · Actions · History"]
+        theme["theme.py<br/>colour tokens + runtime switching"]
+    end
+
+    subgraph core["Orchestration — app/core"]
+        direction TB
+        sc["scan_controller<br/>run_* scan runners"]
+        cov["scan_coverage<br/>per-module coverage"]
+    end
+
+    subgraph svc["Collectors and lookups"]
+        direction TB
+        sysv["system_service<br/>OS · apps · processes · startup"]
+        brw["browser_service<br/>browser profiles"]
+        fms["file_metadata_service<br/>file metadata"]
+        eml["email_service<br/>email exposure check"]
+        usv["username_service<br/>discovery + page verification"]
+    end
+
+    subgraph analysis["Analysis"]
+        direction TB
+        fp["findings_processor<br/>+ findings/rules"]
+        cat["startup_catalogue<br/>offline entry explanations"]
+        risk["risk<br/>exposure score (exposure-v1)"]
+        rem["remediation<br/>catalogue · engine · store"]
+    end
+
+    subgraph storage["Local storage"]
+        direction TB
+        hist["history store<br/>SQLite history.db"]
+        acts["remediation store<br/>SQLite actions.db"]
+        prefs["QSettings<br/>theme & preferences"]
+    end
+
+    subgraph reporting["Reporting"]
+        direction TB
+        rb["reporting/builder"]
+        exp["PDF · JSON · CSV exporters"]
+    end
+
+    user --> mw
+    mw --> worker
+    mw --> pages
+    worker --> sc
+    sc --> sysv
+    sc --> brw
+    sc --> fms
+    sc --> eml
+    sc --> usv
+    sc --> fp
+    sc --> cov
+    fp --> cat
+    mw -->|"after a scan finishes"| risk
+    mw --> rem
+    mw --> hist
+    rem --> acts
+    pages -->|"export"| rb
+    rb --> exp

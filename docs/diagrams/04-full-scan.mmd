@@ -1,0 +1,11 @@
+flowchart LR
+    fs["run_full_scan"] --> sysr["run_system_scan"]
+    fs --> brwr["run_browser_scan"]
+    fs --> filr["run_file_metadata_scan<br/>only when a file was chosen"]
+    sysr --> agg["process_module_results<br/>merge + deduplicate findings"]
+    brwr --> agg
+    filr --> agg
+    agg --> covq["coverage_from_module_results"]
+    agg --> pol{"any module PARTIAL,<br/>or browser unavailable?"}
+    pol -->|"yes"| partial["status PARTIAL<br/>with honest reasons"]
+    pol -->|"no"| done["status COMPLETED"]

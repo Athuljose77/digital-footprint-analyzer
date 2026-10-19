@@ -1,0 +1,26 @@
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant MW as MainWindow
+    participant W as ScanWorker (QThread)
+    participant SC as scan_controller
+    participant SVC as Collectors / lookups
+    participant FP as FindingsProcessor
+    participant AS as Risk + remediation plan
+    participant ST as history.db
+    participant P as Pages
+
+    U->>MW: choose a scan and press Run
+    MW->>W: start ScanWorker(scan_type, target)
+    W->>SC: run_*_scan() in its own event loop
+    SC->>SVC: collect locally and/or look up publicly
+    SVC-->>SC: raw results
+    SC->>SC: map records to FootprintData
+    SC->>FP: process_scan_result / process_module_results
+    FP-->>SC: findings, evidence, coverage
+    SC-->>W: ScanResult
+    W-->>MW: result_ready signal
+    MW->>AS: build_risk_summary + build_plan
+    MW->>ST: record_scan(result, risk, target)
+    MW->>P: set_assessment / show_result / refresh
+    U->>P: review, act, export PDF/JSON/CSV
