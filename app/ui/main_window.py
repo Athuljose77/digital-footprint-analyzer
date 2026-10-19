@@ -441,6 +441,14 @@ class MainWindow(QMainWindow):
         # (widget, template) pairs so one pass can restyle all of them when
         # the theme changes. No panel is left holding the old theme's colors.
         self._themed_widgets = []
+        # Labels whose rich text embeds token colors are rebuilt from these
+        # builders whenever the theme changes, since inline HTML markup beats
+        # any stylesheet the label could re-render.
+        self._themed_html_widgets = []
+        # File-selection labels whose color follows runtime state (file chosen
+        # or not), kept as {label: selected} so a theme change re-applies the
+        # styling that matches their current state.
+        self._file_label_state = {}
         self._expanded_cards = {}
         self._evidence_filter_timer = None
         self._pending_evidence_view = None
@@ -545,11 +553,11 @@ class MainWindow(QMainWindow):
         # Bottom footer tagline card (matches reference UI)
         footer_frame = QFrame()
         footer_frame.setObjectName("sidebar_footer")
-        footer_frame.setStyleSheet(
-            f"QFrame#sidebar_footer {{ background-color: {R('panel_bg')}; "
-            f"border: 1px solid {R('panel_border')}; border-radius: 8px; "
-            "margin: 8px 6px; padding: 6px; }"
-        )
+        self.register_themed_widget(
+            footer_frame,
+            "QFrame#sidebar_footer {{ background-color: {panel_bg}; "
+            "border: 1px solid {panel_border}; border-radius: 8px; "
+            "margin: 8px 6px; padding: 6px; }}")
         footer_layout = QHBoxLayout(footer_frame)
         footer_layout.setContentsMargins(6, 6, 6, 6)
         footer_layout.setSpacing(8)
@@ -596,14 +604,10 @@ class MainWindow(QMainWindow):
         # Hero banner row with high-tech laptop vector graphic and reference typography
         hero_row = QHBoxLayout()
         hero_row.setSpacing(16)
-        hero = QLabel(
-            f"<div style='font-size: 13px; color: {R('muted')}; margin-bottom: 2px;'>Welcome to</div>"
-            f"<div style='font-size: 26px; font-weight: bold;'>Digital Footprint "
-            f"<span style='color: {R('accent')};'>Analyzer</span></div>"
-            f"<div style='font-size: 12px; color: {R('muted')}; margin-top: 4px;'>Understand your digital "
-            "footprint. Keep your data in your hands.</div>"
-        )
+        hero = QLabel()
+        self.register_html_widget(hero, self._hero_html)
         hero.setWordWrap(True)
+        self.home_hero_label = hero
         hero_row.addWidget(hero, stretch=1)
 
         self.hero_emblem = QLabel()
@@ -699,10 +703,10 @@ class MainWindow(QMainWindow):
         # Left Column: Footprint Overview Container Card
         overview_card = QFrame()
         overview_card.setObjectName("overview_card")
-        overview_card.setStyleSheet(
-            f"QFrame#overview_card {{ background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; "
-            "border-radius: 10px; }"
-        )
+        self.register_themed_widget(
+            overview_card,
+            "QFrame#overview_card {{ background-color: {panel_bg_alt}; "
+            "border: 1px solid {panel_border}; border-radius: 10px; }}")
         overview_box = QVBoxLayout(overview_card)
         overview_box.setContentsMargins(14, 14, 14, 14)
         overview_box.setSpacing(6)
@@ -712,7 +716,9 @@ class MainWindow(QMainWindow):
         overview_icon.setPixmap(pixmap("chart", 20))
         overview_header.addWidget(overview_icon)
         overview_title = QLabel("<b>Footprint Overview</b>")
-        overview_title.setStyleSheet("font-size: 14px; color: #ffffff;")
+        self.overview_title = overview_title
+        self.register_themed_widget(
+            overview_title, "font-size: 14px; color: {text};")
         overview_header.addWidget(overview_title)
         overview_header.addStretch()
 
@@ -739,10 +745,10 @@ class MainWindow(QMainWindow):
         # Right Column: Privacy Checklist Container Card
         checklist_card = QFrame()
         checklist_card.setObjectName("checklist_card")
-        checklist_card.setStyleSheet(
-            f"QFrame#checklist_card {{ background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; "
-            "border-radius: 10px; }"
-        )
+        self.register_themed_widget(
+            checklist_card,
+            "QFrame#checklist_card {{ background-color: {panel_bg_alt}; "
+            "border: 1px solid {panel_border}; border-radius: 10px; }}")
         checklist_box = QVBoxLayout(checklist_card)
         checklist_box.setContentsMargins(14, 14, 14, 14)
         checklist_box.setSpacing(8)
@@ -752,7 +758,9 @@ class MainWindow(QMainWindow):
         checklist_icon.setPixmap(pixmap("shield", 20))
         checklist_header.addWidget(checklist_icon)
         checklist_title = QLabel("<b>Privacy Checklist</b>")
-        checklist_title.setStyleSheet("font-size: 14px; color: #ffffff;")
+        self.checklist_title = checklist_title
+        self.register_themed_widget(
+            checklist_title, "font-size: 14px; color: {text};")
         checklist_header.addWidget(checklist_title)
         checklist_header.addStretch()
         checklist_box.addLayout(checklist_header)
@@ -783,8 +791,10 @@ class MainWindow(QMainWindow):
             row_icon_label = QLabel()
             row_icon_label.setPixmap(pixmap(row_icon, 22))
             row_layout.addWidget(row_icon_label)
-            text = QLabel(f"<b>{html.escape(title)}</b><br>"
-                          f"<span style='color: {R('muted')}; font-size: 11px;'>{html.escape(sub)}</span>")
+            text = QLabel()
+            self.register_html_widget(
+                text,
+                lambda t=title, s=sub: self._checklist_row_html(t, s))
             text.setWordWrap(True)
             row_layout.addWidget(text, stretch=1)
             go_btn = QPushButton("›")
@@ -803,10 +813,11 @@ class MainWindow(QMainWindow):
 
         tip_frame = QFrame()
         tip_frame.setObjectName("tip_frame")
-        tip_frame.setStyleSheet(
-            f"QFrame#tip_frame {{ background-color: {R('panel_bg')}; border: 1px solid {R('panel_border')}; "
-            "border-radius: 6px; padding: 4px; }"
-        )
+        self.register_themed_widget(
+            tip_frame,
+            "QFrame#tip_frame {{ background-color: {panel_bg}; "
+            "border: 1px solid {panel_border}; border-radius: 6px; "
+            "padding: 4px; }}")
         tip_layout = QHBoxLayout(tip_frame)
         tip_layout.setContentsMargins(10, 8, 10, 8)
         tip_layout.setSpacing(10)
@@ -827,10 +838,10 @@ class MainWindow(QMainWindow):
         # Recent Scans Section (Bottom)
         recent_card = QFrame()
         recent_card.setObjectName("recent_card")
-        recent_card.setStyleSheet(
-            f"QFrame#recent_card {{ background-color: {R('panel_bg_alt')}; border: 1px solid {R('panel_border')}; "
-            "border-radius: 10px; }"
-        )
+        self.register_themed_widget(
+            recent_card,
+            "QFrame#recent_card {{ background-color: {panel_bg_alt}; "
+            "border: 1px solid {panel_border}; border-radius: 10px; }}")
         recent_box = QVBoxLayout(recent_card)
         recent_box.setContentsMargins(14, 14, 14, 14)
         recent_box.setSpacing(6)
@@ -840,21 +851,25 @@ class MainWindow(QMainWindow):
         recent_icon.setPixmap(pixmap("clock", 18))
         recent_row.addWidget(recent_icon)
         recent_title = QLabel("<b>Recent Scans</b>")
-        recent_title.setStyleSheet("font-size: 14px; color: #ffffff;")
+        self.recent_title = recent_title
+        self.register_themed_widget(
+            recent_title, "font-size: 14px; color: {text};")
         recent_row.addWidget(recent_title)
         recent_row.addStretch()
 
         self.view_all_scans_btn = QPushButton("View All Scans ›")
-        self.view_all_scans_btn.setStyleSheet(
-            "QPushButton { border: 1px solid #1d334d; border-radius: 6px; padding: 5px 12px; font-size: 12px; } "
-            "QPushButton:hover { border-color: #2dd4bf; color: #2dd4bf; }"
-        )
+        self.register_themed_widget(
+            self.view_all_scans_btn,
+            "QPushButton {{ border: 1px solid {panel_border}; border-radius: 6px; "
+            "padding: 5px 12px; font-size: 12px; }} "
+            "QPushButton:hover {{ border-color: {accent}; color: {accent}; }}")
         self.view_all_scans_btn.clicked.connect(self._open_history_dialog)
         recent_row.addWidget(self.view_all_scans_btn)
         recent_box.addLayout(recent_row)
 
         recent_sub = QLabel("Your latest scans are shown below.")
-        recent_sub.setStyleSheet(f"color: {R('muted')}; font-size: 11px; margin-bottom: 4px;")
+        self.register_themed_widget(
+            recent_sub, "color: {muted}; font-size: 11px; margin-bottom: 4px;")
         recent_box.addWidget(recent_sub)
 
         self.recent_scans_table = QTableWidget(0, 6)
@@ -871,6 +886,24 @@ class MainWindow(QMainWindow):
         page.setWidget(content)
         self.pages.addWidget(page)
         self.dashboard_overview.setHtml(self._format_dashboard_overview_html())
+
+    def _hero_html(self):
+        """Hero copy rebuilt from tokens on every theme change."""
+        return (
+            f"<div style='font-size: 13px; color: {R('muted')}; "
+            "margin-bottom: 2px;'>Welcome to</div>"
+            f"<div style='font-size: 26px; font-weight: bold;'>"
+            f"Digital Footprint <span style='color: {R('accent')};'>"
+            "Analyzer</span></div>"
+            f"<div style='font-size: 12px; color: {R('muted')}; "
+            "margin-top: 4px;'>Understand your digital footprint. "
+            "Keep your data in your hands.</div>")
+
+    def _checklist_row_html(self, title, sub):
+        """Checklist row copy with themed secondary text."""
+        return (f"<b>{html.escape(title)}</b><br>"
+                f"<span style='color: {R('muted')}; font-size: 11px;'>"
+                f"{html.escape(sub)}</span>")
 
     def _make_scan_card(self, title, description, icon_name="target"):
         card = QFrame()
@@ -890,7 +923,9 @@ class MainWindow(QMainWindow):
         card_layout.addWidget(icon_label)
         title_label = QLabel(f"<b>{html.escape(title)}</b>")
         title_label.setWordWrap(True)
-        title_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #ffffff;")
+        title_label.setObjectName("scan_card_title")
+        self.register_themed_widget(
+            title_label, "font-size: 13px; font-weight: bold; color: {text};")
         card_layout.addWidget(title_label)
         desc_label = QLabel(html.escape(description))
         desc_label.setWordWrap(True)
@@ -1314,8 +1349,8 @@ class MainWindow(QMainWindow):
         self.file_select_btn.clicked.connect(self.select_file)
         file_select_row.addWidget(self.file_select_btn)
 
-        self.selected_file_label = QLabel("No file selected")
-        self.selected_file_label.setStyleSheet(f"color: {R('faint')};")
+        self.selected_file_label = QLabel()
+        self._set_file_label(self.selected_file_label, "No file selected", False)
         file_select_row.addWidget(self.selected_file_label, stretch=1)
 
         self.file_analyze_btn = QPushButton("Analyze File")
@@ -1391,8 +1426,8 @@ class MainWindow(QMainWindow):
         self.full_scan_select_btn.clicked.connect(self.select_full_scan_file)
         full_file_row.addWidget(self.full_scan_select_btn)
 
-        self.full_scan_file_label = QLabel("No file selected")
-        self.full_scan_file_label.setStyleSheet(f"color: {R('faint')};")
+        self.full_scan_file_label = QLabel()
+        self._set_file_label(self.full_scan_file_label, "No file selected", False)
         full_file_row.addWidget(self.full_scan_file_label, stretch=1)
 
         self.full_scan_clear_btn = QPushButton("Clear")
@@ -1595,9 +1630,38 @@ class MainWindow(QMainWindow):
         widget.setStyleSheet(self._render_theme_template(template))
         return widget
 
+    def register_html_widget(self, widget, builder):
+        """Set rich text from a builder and remember it for re-theming.
+
+        Inline HTML colors win over any stylesheet, so labels that embed
+        token colors are rebuilt from the same builder whenever the theme
+        changes instead of being styled in place.
+
+        Args:
+            widget: the widget whose text is set.
+            builder: a zero-argument callable returning HTML that resolves
+                token colors through R() at call time.
+        """
+        self._themed_html_widgets.append((widget, builder))
+        widget.setText(builder())
+        return widget
+
     @staticmethod
     def _render_theme_template(template):
         return theme.render_template(template)
+
+    def _set_file_label(self, label, text, selected):
+        """Update a file-selection label and remember its state for re-theming."""
+        label.setText(text)
+        self._file_label_state[label] = bool(selected)
+        label.setStyleSheet(self._file_label_style(selected))
+
+    @staticmethod
+    def _file_label_style(selected):
+        """Stylesheet for a file-selection label in the current theme."""
+        if selected:
+            return f"color: {R('black_text')}; font-weight: bold;"
+        return f"color: {R('faint')};"
 
     def _refresh_home_theme(self):
         """Restyle every registered widget and re-render themed HTML.
@@ -1609,6 +1673,24 @@ class MainWindow(QMainWindow):
         for widget, template in list(self._themed_widgets):
             try:
                 widget.setStyleSheet(self._render_theme_template(template))
+            except RuntimeError:
+                # The underlying C++ widget was already destroyed.
+                continue
+
+        # Labels whose HTML embeds token colors cannot be restyled by a
+        # stylesheet, so they are rebuilt from their builders instead.
+        for widget, builder in list(self._themed_html_widgets):
+            try:
+                widget.setText(builder())
+            except RuntimeError:
+                # The underlying C++ widget was already destroyed.
+                continue
+
+        # File-selection labels carry runtime state (selected or not); re-apply
+        # the stylesheet that matches their current state in the new theme.
+        for label, selected in list(self._file_label_state.items()):
+            try:
+                label.setStyleSheet(self._file_label_style(selected))
             except RuntimeError:
                 # The underlying C++ widget was already destroyed.
                 continue
@@ -1693,7 +1775,7 @@ class MainWindow(QMainWindow):
         appearance_layout.setSpacing(10)
 
         theme_desc = QLabel("Choose a color theme or follow your operating system:")
-        theme_desc.setStyleSheet(f"color: {R('muted')};")
+        self.register_themed_widget(theme_desc, "color: {muted};")
         appearance_layout.addWidget(theme_desc)
 
         self.theme_btn_group = QButtonGroup(self)
@@ -1824,16 +1906,18 @@ class MainWindow(QMainWindow):
         privacy_layout.addLayout(cache_row)
 
         self.settings_status_label = QLabel("")
-        self.settings_status_label.setStyleSheet(f"color: {R('muted')};")
+        self.register_themed_widget(
+            self.settings_status_label, "color: {muted};")
         self.settings_status_label.setWordWrap(True)
         privacy_layout.addWidget(self.settings_status_label)
 
         privacy_note = QFrame()
         privacy_note.setFrameShape(QFrame.NoFrame)
-        privacy_note.setStyleSheet(
-            f"QFrame {{ background-color: {R('panel_bg')}; "
-            f"border: 1px solid {R('panel_border')}; border-radius: 6px; }}"
-        )
+        privacy_note.setObjectName("settings_privacy_note")
+        self.register_themed_widget(
+            privacy_note,
+            "QFrame#settings_privacy_note {{ background-color: {panel_bg}; "
+            "border: 1px solid {panel_border}; border-radius: 6px; }}")
         note_row = QHBoxLayout(privacy_note)
         note_row.setContentsMargins(10, 8, 10, 8)
         note_row.setSpacing(10)
@@ -2260,8 +2344,8 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.selected_file_path = file_path
-            self.selected_file_label.setText(os.path.basename(file_path))
-            self.selected_file_label.setStyleSheet(f"color: {R('black_text')}; font-weight: bold;")
+            self._set_file_label(
+                self.selected_file_label, os.path.basename(file_path), True)
             self.file_analyze_btn.setEnabled(True)
             self.file_status_label.setText("File selected. Click 'Analyze File' to extract metadata.")
             self.file_findings_area.clear()
@@ -2304,15 +2388,14 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.full_scan_file_path = file_path
-            self.full_scan_file_label.setText(os.path.basename(file_path))
-            self.full_scan_file_label.setStyleSheet(f"color: {R('black_text')}; font-weight: bold;")
+            self._set_file_label(
+                self.full_scan_file_label, os.path.basename(file_path), True)
             self.full_scan_clear_btn.setEnabled(True)
             self.full_scan_status_label.setText("File selected. Click 'Run Full Scan' to include it; otherwise System and Browser scans run without File Metadata.")
 
     def clear_full_scan_file(self):
         self.full_scan_file_path = None
-        self.full_scan_file_label.setText("No file selected")
-        self.full_scan_file_label.setStyleSheet(f"color: {R('faint')};")
+        self._set_file_label(self.full_scan_file_label, "No file selected", False)
         self.full_scan_clear_btn.setEnabled(False)
 
     def start_full_scan(self):
