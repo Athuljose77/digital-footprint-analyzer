@@ -3,6 +3,7 @@ import copy
 from typing import Dict, List, Optional, Any, Union
 
 from app.models.common import ScanResult, FootprintData, Finding, Risk, Recommendation
+from app.core.startup_catalogue import explain as explain_startup_entry
 
 
 # Standard severity ranking for comparison and preservation
@@ -30,13 +31,42 @@ SEVERITY_DISPLAY = {
 # text has to read clearly on a finding card and in a report even for someone
 # who does not know what an autostart entry is.
 STARTUP_FINDING_TITLE_TEMPLATE = "Startup Programs ({count} detected)"
-STARTUP_FINDING_DESCRIPTION = (
-    "These programs launch automatically when the system starts, so they "
-    "run every session even if you never open them. Many entries are normal "
-    "desktop tools such as keyrings, update notifiers, and accessibility "
-    "helpers, but review the list and disable anything you do not recognise "
-    "from your system's startup settings."
-)
+
+
+def _annotate_startup_entry(line: str, summary: Optional[str]) -> str:
+    """Append an offline-catalogue note (or an honest unknown marker)."""
+    if summary:
+        return f"{line} — {summary}"
+    return (f"{line} — not recognised by this tool; look it up before "
+            "keeping it.")
+
+
+def startup_finding_description(total: int, recognised: int) -> str:
+    """Plain-language description that also reports unrecognised entries.
+
+    Args:
+        total: number of autostart entries recorded.
+        recognised: how many of them the offline catalogue could explain.
+    """
+    unknown = max(int(total) - int(recognised), 0)
+    if unknown == 0:
+        detail = ("Every entry was matched to a component this tool can "
+                  "explain; the notes are in the evidence below.")
+    elif unknown == 1:
+        detail = (f"{recognised} of {total} entries were matched to known "
+                  "components and are explained in the evidence; the "
+                  "remaining entry is not recognised, so look it up before "
+                  "keeping it.")
+    else:
+        detail = (f"{recognised} of {total} entries were matched to known "
+                  "components and are explained in the evidence; the "
+                  f"remaining {unknown} entries are not recognised, so look "
+                  "them up before keeping them.")
+    return (
+        "These programs launch automatically when the system starts, so "
+        "they run every session even if you never open them. " + detail +
+        " Disable anything you do not need from your system's startup "
+        "settings.")
 
 
 def _get_severity_rank(sev: Optional[str]) -> int:
@@ -569,15 +599,23 @@ class FindingsProcessor:
                 if fd.subcategory == "Startup Applications" and "Unavailable" not in str(fd.value) and "No startup" not in str(fd.value)
             ]
             if startup_apps:
-                app_names = [str(a.value) for a in startup_apps]
+                annotated = []
+                recognised = 0
+                for app in startup_apps:
+                    line = str(app.value)
+                    summary = explain_startup_entry(line)
+                    if summary:
+                        recognised += 1
+                    annotated.append(_annotate_startup_entry(line, summary))
                 sev = "Medium" if len(startup_apps) >= 15 else "Low"
                 findings.append(Finding(
                     finding_id=str(uuid.uuid4()),
                     finding_type="System Configuration",
                     title=STARTUP_FINDING_TITLE_TEMPLATE.format(
                         count=len(startup_apps)),
-                    description=STARTUP_FINDING_DESCRIPTION,
-                    evidence=app_names,
+                    description=startup_finding_description(
+                        len(startup_apps), recognised),
+                    evidence=annotated,
                     severity=sev,
                     status="Informational"
                 ))
@@ -654,15 +692,26 @@ class FindingsProcessor:
         sys_res = data.get("results", {}) if isinstance(data.get("results"), dict) else data
         startups = sys_res.get("startup_applications", [])
         if startups and isinstance(startups, list):
-            names = [s.get("name", "Unknown") for s in startups if isinstance(s, dict)]
+            annotated = []
+            recognised = 0
+            for s in startups:
+                if not isinstance(s, dict):
+                    continue
+                name = str(s.get("name", "Unknown"))
+                summary = explain_startup_entry(
+                    f"{name} {s.get('command', '')}")
+                if summary:
+                    recognised += 1
+                annotated.append(_annotate_startup_entry(name, summary))
             sev = "Medium" if len(startups) >= 15 else "Low"
             findings.append(Finding(
                 finding_id=str(uuid.uuid4()),
                 source_module="system",
                 finding_type="System Configuration",
                 title=STARTUP_FINDING_TITLE_TEMPLATE.format(count=len(startups)),
-                description=STARTUP_FINDING_DESCRIPTION,
-                evidence=names,
+                description=startup_finding_description(
+                    len(startups), recognised),
+                evidence=annotated,
                 severity=sev,
                 status="Informational"
             ))
