@@ -99,6 +99,128 @@ def _deterministic_finding_id(
     )
     return str(uuid.uuid5(uuid.NAMESPACE_URL, normalized or "digital-footprint-finding"))
 
+# ---------------------------------------------------------------------------
+# Provenance
+#
+# Every finding records which module produced it, how it was established
+# (verification), and a stable identity key. Scores, history, and the report
+# exporters read these fields instead of guessing, so the same finding cannot
+# be described differently in two places.
+# ---------------------------------------------------------------------------
+
+MODULE_BY_RULE_PREFIX = {
+    "EML": "email",
+    "USR": "username",
+    "SYS": "system",
+    "BRW": "browser",
+    "FILE": "file_metadata",
+}
+
+MODULE_BY_FINDING_TYPE = {
+    "Email Breach": "email",
+    "Email Breach Record": "email",
+    "Public Profile": "username",
+    "Public Presence": "username",
+    "Startup Application": "system",
+    "System Configuration": "system",
+    "Browser Profile": "browser",
+    "Embedded Geolocation": "file_metadata",
+    "Device Metadata": "file_metadata",
+    "Sensitive Metadata": "file_metadata",
+}
+
+# Confidence implied by how the evidence was established. Fixed mapping, not
+# a per-scan guess.
+CONFIDENCE_BY_VERIFICATION = {
+    "direct-observation": "high",
+    "provider-verified": "high",
+    "http-verified": "high",
+    "provider-reported": "low",
+    "unconfirmed": "low",
+    "unknown": "low",
+    "not-applicable": None,
+}
+
+LOCAL_MODULES = ("system", "browser", "file_metadata")
+
+# Strongest-first ranking used when two duplicates establish the same issue
+# with different evidence strength.
+VERIFICATION_RANK = {
+    "direct-observation": 5,
+    "http-verified": 4,
+    "provider-verified": 4,
+    "provider-reported": 2,
+    "unconfirmed": 1,
+    "unknown": 0,
+    "not-applicable": -1,
+}
+
+COVERAGE_FINDING_TYPES = (
+    "Scan Limitation",
+    "Scan Coverage",
+    "Scan Warnings",
+    "Unavailable Sources",
+)
+
+
+def infer_source_module(rule_id, finding_type):
+    """Best-effort module attribution for findings built without one."""
+    rule = str(rule_id or "").strip().upper()
+    if rule:
+        prefix = rule.split("-")[0]
+        if prefix in MODULE_BY_RULE_PREFIX:
+            return MODULE_BY_RULE_PREFIX[prefix]
+    return MODULE_BY_FINDING_TYPE.get(str(finding_type or "").strip())
+
+
+def infer_verification(source_module, finding_type):
+    """How the evidence behind a finding was established.
+
+    Local collectors read the machine directly, so their findings are direct
+    observations. Anything reported by a third party is only as strong as
+    that provider's own statement, and is labelled accordingly.
+    """
+    ftype = str(finding_type or "").strip()
+    if ftype in COVERAGE_FINDING_TYPES:
+        return "not-applicable"
+    if source_module in LOCAL_MODULES:
+        return "direct-observation"
+    if ftype in ("Email Breach", "Email Breach Record"):
+        return "provider-reported"
+    if ftype in ("Public Profile", "Public Presence"):
+        return "unconfirmed"
+    return "unknown"
+
+
+def with_provenance(finding, explicit_module=None, explicit_verification=None):
+    """Return a copy of *finding* with module, verification, and identity set.
+
+    Existing values always win, so a rule or extractor that knows more than
+    the inference keeps its own answer.
+    """
+    from app.core.findings.models import make_identity_key
+
+    module = (finding.source_module or explicit_module
+              or infer_source_module(finding.rule_id, finding.finding_type))
+    verification = (finding.verification or explicit_verification
+                    or infer_verification(module, finding.finding_type))
+    confidence = finding.confidence or CONFIDENCE_BY_VERIFICATION.get(verification)
+    identity_key = finding.identity_key or make_identity_key(
+        finding.rule_id, finding.finding_type, finding.title)
+
+    sources = [str(s) for s in (finding.sources or []) if s]
+    if module and module not in sources:
+        sources.insert(0, module)
+
+    return finding.model_copy(update={
+        "source_module": module,
+        "sources": sources,
+        "identity_key": identity_key,
+        "verification": verification,
+        "confidence": confidence,
+    })
+
+
 class FindingsProcessor:
     """
     Central processor for normalizing, deduplicating, and synthesizing
@@ -130,7 +252,7 @@ class FindingsProcessor:
                     finding_type, title, description, severity, status
                 )
 
-            return Finding(
+            return with_provenance(Finding(
                 finding_id=finding_id,
                 finding_type=finding_type,
                 title=title,
@@ -141,7 +263,7 @@ class FindingsProcessor:
                 category=category,
                 rule_id=rule_id,
                 limitations=limitations
-            )
+            ))
 
         if isinstance(item, dict):
             finding_type = str(item.get("finding_type") or "General").strip()
@@ -167,7 +289,7 @@ class FindingsProcessor:
                     finding_type, title, description, severity, status
                 )
 
-            return Finding(
+            return with_provenance(Finding(
                 finding_id=finding_id,
                 finding_type=finding_type,
                 title=title,
@@ -178,10 +300,10 @@ class FindingsProcessor:
                 category=category,
                 rule_id=rule_id,
                 limitations=limitations
-            )
+            ))
 
         # Fallback for unexpected data types
-        return Finding(
+        return with_provenance(Finding(
             finding_id=str(uuid.uuid4()),
             finding_type="Unknown",
             title=str(item),
@@ -192,7 +314,7 @@ class FindingsProcessor:
             category="Observation",
             rule_id=None,
             limitations=None
-        )
+        ))
 
     @classmethod
     def deduplicate_findings(cls, findings: List[Finding]) -> List[Finding]:
@@ -260,7 +382,22 @@ class FindingsProcessor:
                 if f.limitations and (not chosen_limitations or len(f.limitations) > len(chosen_limitations)):
                     chosen_limitations = f.limitations
 
-                dedup_map[key] = Finding(
+                merged_sources = list(existing.sources or [])
+                for src in list(f.sources or []):
+                    if src and src not in merged_sources:
+                        merged_sources.append(src)
+                for src in (f.source_module, existing.source_module):
+                    if src and src not in merged_sources:
+                        merged_sources.insert(0, src)
+
+                chosen_verification = max(
+                    (existing.verification, f.verification),
+                    key=lambda v: VERIFICATION_RANK.get(v or "unknown", 0),
+                )
+                if chosen_verification is None:
+                    chosen_verification = "unknown"
+
+                dedup_map[key] = with_provenance(Finding(
                     finding_id=existing.finding_id,
                     finding_type=existing.finding_type,
                     title=existing.title,
@@ -270,8 +407,13 @@ class FindingsProcessor:
                     status=chosen_status,
                     category=chosen_category,
                     rule_id=chosen_rule_id,
-                    limitations=chosen_limitations
-                )
+                    limitations=chosen_limitations,
+                    source_module=existing.source_module or f.source_module,
+                    sources=merged_sources,
+                    identity_key=existing.identity_key or f.identity_key,
+                    verification=chosen_verification,
+                    confidence=CONFIDENCE_BY_VERIFICATION.get(chosen_verification),
+                ))
 
         return [dedup_map[k] for k in order]
 
@@ -342,19 +484,28 @@ class FindingsProcessor:
                 platforms = [p.source for p in profiles if p.source and p.source != "Unknown"]
                 urls = [str(p.value) for p in profiles if p.value]
                 count = len(profiles)
+                confirmed = sum(1 for p in profiles
+                                if p.subcategory == "Confirmed Profile")
 
                 platforms_summary = ", ".join(platforms[:8])
                 if len(platforms) > 8:
                     platforms_summary += f", and {len(platforms) - 8} more"
 
+                description = (
+                    f"Public profiles matching this username were detected across {count} platform(s): {platforms_summary}. "
+                    "Ownership is unverified; these accounts may belong to different individuals using the same handle."
+                )
+                if confirmed:
+                    description += (
+                        f" {confirmed} of these were confirmed by fetching the platform page itself, "
+                        "which shows the handle; a page that exists still does not prove who owns it."
+                    )
+
                 findings.append(Finding(
                     finding_id=str(uuid.uuid4()),
                     finding_type="Public Presence",
                     title="Possible username matches — ownership unverified",
-                    description=(
-                        f"Public profiles matching this username were detected across {count} platform(s): {platforms_summary}. "
-                        "Ownership is unverified; these accounts may belong to different individuals using the same handle."
-                    ),
+                    description=description,
                     evidence=urls,
                     severity="Info",
                     status="Informational"
@@ -432,12 +583,17 @@ class FindingsProcessor:
 
             findings.append(Finding(
                 finding_id=str(uuid.uuid4()),
+                source_module="email",
                 finding_type="Email Breach",
                 title=f"Exposed in {name}",
                 description=f"Records exposed: {records}. Industry: {industry}",
                 evidence=exposed if isinstance(exposed, list) else [str(exposed)],
                 severity="High" if has_pw else "Medium",
-                status="Unremediated"
+                status="Unremediated",
+                # The breach provider's own verification flag decides how
+                # strongly this may be stated.
+                verification=("provider-verified" if b.get("verified")
+                              else "provider-reported"),
             ))
 
     @classmethod
@@ -448,19 +604,31 @@ class FindingsProcessor:
             platforms = [r.get("platform", "Unknown") for r in results if isinstance(r, dict)]
             urls = [r.get("profile_url", "") for r in results if isinstance(r, dict) and r.get("profile_url")]
             count = len(results)
+            confirmed = sum(
+                1 for r in results
+                if isinstance(r, dict) and str(r.get("verification") or "") == "confirmed"
+            )
 
             platforms_str = ", ".join(platforms[:8])
             if len(platforms) > 8:
                 platforms_str += f", and {len(platforms) - 8} more"
 
+            description = (
+                f"Public profiles matching this username were detected across {count} platform(s): {platforms_str}. "
+                "Ownership is unverified; these accounts may belong to different individuals using the same handle."
+            )
+            if confirmed:
+                description += (
+                    f" {confirmed} of these were confirmed by fetching the platform page itself, "
+                    "which shows the handle; a page that exists still does not prove who owns it."
+                )
+
             findings.append(Finding(
                 finding_id=str(uuid.uuid4()),
+                source_module="username",
                 finding_type="Public Presence",
                 title="Possible username matches — ownership unverified",
-                description=(
-                    f"Public profiles matching this username were detected across {count} platform(s): {platforms_str}. "
-                    "Ownership is unverified; these accounts may belong to different individuals using the same handle."
-                ),
+                description=description,
                 evidence=urls,
                 severity="Info",
                 status="Informational"
@@ -476,6 +644,7 @@ class FindingsProcessor:
             sev = "Medium" if len(startups) >= 15 else "Low"
             findings.append(Finding(
                 finding_id=str(uuid.uuid4()),
+                source_module="system",
                 finding_type="System Configuration",
                 title=f"Persistent Startup Footprint ({len(startups)} detected)",
                 description="Applications configured to start automatically on system boot were detected.",
@@ -501,6 +670,7 @@ class FindingsProcessor:
             if "Location" in cat or "GPS" in cat:
                 findings.append(Finding(
                     finding_id=str(uuid.uuid4()),
+                    source_module="file_metadata",
                     finding_type="Sensitive Metadata",
                     title="Location Metadata Detected in File",
                     description=desc or "File contains GPS geographic location metadata.",
@@ -511,6 +681,7 @@ class FindingsProcessor:
             elif any(k in cat for k in ("Device", "Personal", "Hardware", "Identification")):
                 findings.append(Finding(
                     finding_id=str(uuid.uuid4()),
+                    source_module="file_metadata",
                     finding_type="Sensitive Metadata",
                     title=f"Personal or Device Metadata Detected ({cat})",
                     description=desc or "File metadata reveals personal or device identification.",
@@ -521,6 +692,7 @@ class FindingsProcessor:
             else:
                 findings.append(Finding(
                     finding_id=str(uuid.uuid4()),
+                    source_module="file_metadata",
                     finding_type="Sensitive Metadata",
                     title=f"Embedded Metadata Detected ({cat})",
                     description=desc or "File metadata detected.",
@@ -542,6 +714,7 @@ class FindingsProcessor:
             cov_desc = f"Browsers searched: {', '.join(searched)}; Detected: {', '.join(detected)}"
             findings.append(Finding(
                 finding_id=str(uuid.uuid4()),
+                source_module="browser",
                 finding_type="Scan Coverage",
                 title="Browser Footprint Scan Coverage",
                 description=cov_desc,
@@ -553,6 +726,7 @@ class FindingsProcessor:
         if failed_sources:
             findings.append(Finding(
                 finding_id=str(uuid.uuid4()),
+                source_module="browser",
                 finding_type="Unavailable Sources",
                 title="Sources That Could Not Be Checked",
                 description=" | ".join(failed_sources),
@@ -564,6 +738,7 @@ class FindingsProcessor:
         if errors:
             findings.append(Finding(
                 finding_id=str(uuid.uuid4()),
+                source_module="browser",
                 finding_type="Scan Warnings",
                 title="Non-Fatal Scan Warnings",
                 description=f"{len(errors)} warning(s) encountered during scan",

@@ -166,10 +166,29 @@ function App() {
                 {' / 100'}
               </div>
 
+              {result.score_basis && (
+                <p className="notice">
+                  {result.score_basis}
+                </p>
+              )}
+
+              {result.message && (
+                <p className="summary">
+                  {result.message}
+                </p>
+              )}
+
               <p>
                 Profiles found:{' '}
                 <strong>
                   {result.profiles_found ?? 0}
+                </strong>
+              </p>
+
+              <p>
+                Confirmed by the platform page:{' '}
+                <strong>
+                  {result.confirmed_count ?? 0}
                 </strong>
               </p>
 
@@ -195,51 +214,87 @@ function App() {
 
               <div className="platforms">
 
+                {result.results && result.results.length === 0 && (
+                  <p>
+                    No candidate profiles were reported.
+                  </p>
+                )}
+
                 {result.results &&
-                  result.results.map((item) => (
-                    <div
-                      className="platform"
-                      key={item.platform}
-                    >
+                  result.results.map((item, index) => {
+                    const verification =
+                      item.verification || 'inconclusive'
+                    const confirmed =
+                      verification === 'confirmed'
+                    const missing =
+                      verification === 'not_found'
+                    return (
+                      <div
+                        className="platform"
+                        key={`${item.platform}-${item.profile_url}-${index}`}
+                      >
 
-                      <span>
-                        {item.platform}
-                      </span>
+                        <div className="platform-main">
+                          <span>
+                            {item.platform}
+                          </span>
 
-                      <div>
+                          {item.verification_note && (
+                            <span className="platform-note">
+                              {item.verification_note}
+                            </span>
+                          )}
 
-                        <span
-                          className={
-                            item.status === 'FOUND'
-                              ? 'found'
-                              : item.status === 'NOT_FOUND'
-                              ? 'not-found'
-                              : 'unknown'
-                          }
-                        >
-                          {item.status}
-                        </span>
+                          {item.checked_at && (
+                            <span className="platform-note">
+                              Checked {item.checked_at}
+                              {item.http_status
+                                ? ` · HTTP ${item.http_status}`
+                                : ' · no response'}
+                            </span>
+                          )}
+                        </div>
 
-                        {item.status === 'FOUND' &&
-                          item.profile_url && (
+                        <div className="platform-side">
+                          <span
+                            className={
+                              confirmed
+                                ? 'found'
+                                : missing
+                                ? 'not-found'
+                                : 'unknown'
+                            }
+                          >
+                            {confirmed
+                              ? 'CONFIRMED'
+                              : missing
+                              ? 'NOT FOUND'
+                              : 'UNVERIFIED'}
+                          </span>
+
+                          {item.profile_url && (
                             <a
                               href={item.profile_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              style={{
-                                marginLeft: '10px'
-                              }}
                             >
-                              View Profile
+                              View profile
                             </a>
                           )}
+                        </div>
 
                       </div>
-
-                    </div>
-                  ))}
+                    )
+                  })}
 
               </div>
+
+              <p className="privacy-note">
+                A username lookup asks public platforms directly and reads each
+                candidate page once to check whether it really shows this
+                handle. A page that exists is evidence of an account, not proof
+                of who owns it.
+              </p>
 
             </div>
           )}

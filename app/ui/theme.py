@@ -226,6 +226,39 @@ def panel_hover():
         else _CHROME[False]["nav_item_hover_bg"]
 
 
+# Token names a widget stylesheet template may use. Every value resolves
+# through this module, so no widget carries a literal color and a theme switch
+# restyles it by re-rendering the same template.
+THEME_TEMPLATE_TOKENS = (
+    "panel_bg",
+    "panel_bg_alt",
+    "panel_border",
+    "text",
+    "muted",
+    "faint",
+    "accent",
+    "accent_soft",
+    "on_accent",
+    "panel_hover",
+)
+
+
+def render_template(template):
+    """Resolve a themed-widget stylesheet template against the active theme."""
+    return template.format(
+        panel_bg=R("panel_bg"),
+        panel_bg_alt=R("panel_bg_alt"),
+        panel_border=R("panel_border"),
+        text=R("text"),
+        muted=R("muted"),
+        faint=R("faint"),
+        accent=R("accent"),
+        accent_soft=accent_soft(),
+        on_accent=on_accent(),
+        panel_hover=panel_hover(),
+    )
+
+
 # High-contrast selection colors (issue: white-on-white selection blocks).
 HIGH_CONTRAST_SELECTION = ("#2563eb", "#ffffff")
 STANDARD_SELECTION = ("#14b8a6", "#062a26")

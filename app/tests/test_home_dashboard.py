@@ -80,7 +80,15 @@ class TestHomeDashboard(unittest.TestCase):
         self.assertIn("Digital Footprint", self.window.sidebar_logo.text())
         self.assertIn("Analyzer", self.window.sidebar_logo.text())
         self.assertIn("privacy", self.window.sidebar_tagline.text().lower())
-        self.assertEqual(self.window.sidebar.count(), 4)
+        # The original four entries keep their order and are followed by the
+        # assessment, evidence, action, and history pages.
+        labels = [self.window.sidebar.item(i).text()
+                  for i in range(self.window.sidebar.count())]
+        self.assertEqual(labels[:4], ["Home", "My Footprint", "Public Lookup",
+                                      "Settings"])
+        self.assertEqual(len(labels), self.window.pages.count())
+        self.assertEqual(labels[4:], ["Assessment", "Evidence", "Actions",
+                                      "History"])
 
     def test_hero_reference_accents(self):
         emblem = self.window.hero_emblem.pixmap()

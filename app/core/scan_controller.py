@@ -1,14 +1,17 @@
 import uuid
 import sys
 import os
+import functools
 
 # Ensure backend modules can be imported
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from app.models.common import ScanResult, FootprintData, Finding
+from app.core import scan_coverage
 from app.core.findings_processor import FindingsProcessor, _get_severity_rank
+from app.core.history.store import utc_now_iso
 from backend.services.email_service import check_email
 from backend.services.username_service import check_username
 
@@ -16,6 +19,30 @@ _BROWSER_UNAVAILABLE_MESSAGE = (
     "Browser footprint scanning is not available on this platform."
 )
 
+
+def _timestamped_scan(
+    runner: Callable[..., Awaitable[ScanResult]],
+) -> Callable[..., Awaitable[ScanResult]]:
+    """Record honest wall-clock bounds around one scan.
+
+    ``started_at`` is captured before the runner begins and ``finished_at``
+    after it returns, so history records and exported reports show real times
+    instead of blanks. Applied to every module runner; the Full Scan wraps the
+    whole span because it calls the decorated module runners itself.
+    """
+
+    @functools.wraps(runner)
+    async def wrapper(*args, **kwargs) -> ScanResult:
+        started = utc_now_iso()
+        result = await runner(*args, **kwargs)
+        if isinstance(result, ScanResult):
+            result.started_at = started
+            result.finished_at = utc_now_iso()
+        return result
+
+    return wrapper
+
+@_timestamped_scan
 async def run_email_scan(email: str, timeout: float = None) -> ScanResult:
     """Run the Email exposure lookup.
 
@@ -79,13 +106,24 @@ async def run_email_scan(email: str, timeout: float = None) -> ScanResult:
         return result
 
 
-async def run_username_scan(username: str, timeout: float = None) -> ScanResult:
+def _int_field(data: dict[str, object], key: str) -> int:
+    """Read an integer count out of a serialized service payload."""
+    value = data.get(key)
+    return value if isinstance(value, int) else 0
+
+
+@_timestamped_scan
+async def run_username_scan(username: str, timeout: float = None,
+                            verify: bool = True) -> ScanResult:
     """Run the Username public-presence lookup.
 
     Args:
         username: handle to look up.
         timeout: optional search budget in seconds from the Settings page.
             None keeps the service default.
+        verify: whether the lookup may fetch each candidate profile page to
+            check that it really belongs to this handle. False keeps the
+            lookup to the discovery tool alone.
     """
     scan_id = str(uuid.uuid4())
     result = ScanResult(
@@ -97,24 +135,52 @@ async def run_username_scan(username: str, timeout: float = None) -> ScanResult:
     )
     
     try:
-        data = await check_username(username, timeout=timeout)
+        data = await check_username(username, timeout=timeout, verify=verify)
+
+        # Narrow the serialized payload once: the service returns
+        # dict[str, object], so every use below is typed from here.
+        message = data.get("message")
+        message = message if isinstance(message, str) else ""
+        raw_results = data.get("results")
+        found_list: list[dict[str, object]] = []
+        if isinstance(raw_results, list):
+            found_list = [item for item in raw_results if isinstance(item, dict)]
+        confirmed = _int_field(data, "confirmed_count")
+        unverified = _int_field(data, "inconclusive_count")
+
         if data.get("status") == "ERROR":
             result.status = "ERROR"
-            result.message = data.get("message", "Unknown error")
+            result.message = message or "Unknown error"
             return result
-            
-        if data.get("status") == "FOUND":
+
+        # Candidates are recorded whatever the verification said, so nothing
+        # the scan observed is lost. Confirmed profiles are marked as such and
+        # the rest stay unverified candidates.
+        if data.get("status") in ("FOUND", "UNKNOWN"):
             result.status = "COMPLETED"
-            found_list = data.get("results", [])
-            result.message = f"Found {len(found_list)} profiles."
-            
+
+            if data.get("status") == "UNKNOWN" or not confirmed:
+                result.message = (
+                    f"Found {len(found_list)} unverified profile candidate(s); "
+                    "none could be confirmed by the platform pages themselves."
+                )
+            elif unverified:
+                result.message = (
+                    f"Confirmed {confirmed} profile(s); {unverified} further "
+                    "candidate(s) could not be verified."
+                )
+            else:
+                result.message = f"Confirmed {confirmed} profile(s)."
+
             for item in found_list:
+                verification = str(item.get("verification") or "")
                 result.footprint_data.append(FootprintData(
                     category="Public Presence",
-                    subcategory="Social Profile",
-                    source=item.get("platform", "Unknown"),
+                    subcategory=("Confirmed Profile" if verification == "confirmed"
+                                 else "Social Profile"),
+                    source=str(item.get("platform") or "Unknown"),
                     data_type="URL",
-                    value=item.get("profile_url"),
+                    value=str(item.get("profile_url") or ""),
                     sensitivity="Low"
                 ))
             return FindingsProcessor.process_scan_result(result)
@@ -125,7 +191,7 @@ async def run_username_scan(username: str, timeout: float = None) -> ScanResult:
             return FindingsProcessor.process_scan_result(result)
             
         result.status = "UNKNOWN"
-        result.message = "Unexpected status from username service"
+        result.message = message or "Unexpected status from username service"
         return result
         
     except Exception as e:
@@ -135,6 +201,7 @@ async def run_username_scan(username: str, timeout: float = None) -> ScanResult:
 
 from app.services.system_service import check_system
 
+@_timestamped_scan
 async def run_system_scan(process_mode: str = None) -> ScanResult:
     """Run the System Footprint scan.
 
@@ -331,6 +398,7 @@ async def run_system_scan(process_mode: str = None) -> ScanResult:
 
 from app.services.file_metadata_service import check_file_metadata
 
+@_timestamped_scan
 async def run_file_metadata_scan(file_path: str) -> ScanResult:
     scan_id = str(uuid.uuid4())
     result = ScanResult(
@@ -438,6 +506,7 @@ async def run_file_metadata_scan(file_path: str) -> ScanResult:
 
 from app.services.browser_service import check_browsers
 
+@_timestamped_scan
 async def run_browser_scan() -> ScanResult:
     scan_id = str(uuid.uuid4())
     result = ScanResult(
@@ -633,6 +702,7 @@ def _is_browser_unavailable(browser_result: ScanResult | None) -> bool:
     return False
 
 
+@_timestamped_scan
 async def run_full_scan(
     file_path: str | None = None,
     progress_callback: Callable[[str], None] | None = None,
@@ -693,6 +763,10 @@ async def run_full_scan(
     combined.analysis_mode = "Full Footprint Analysis"
     combined.scan_type = "Full Scan"
     combined.scan_category = "Unified Footprint"
+    # Authoritative per-module coverage, recorded from the real module results
+    # so scoring, history, and comparison never have to infer what ran.
+    combined.module_coverage = scan_coverage.coverage_from_module_results(
+        module_results, included={"file_metadata": file_included})
 
     # Approved Full Scan status policy: a PARTIAL module result or an
     # unavailable Browser downgrades an otherwise COMPLETED aggregate to

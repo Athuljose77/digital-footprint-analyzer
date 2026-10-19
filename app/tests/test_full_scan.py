@@ -680,5 +680,60 @@ class TestRunFullScanFailureSemantics(unittest.TestCase):
         mock_check_username.assert_not_awaited()
 
 
+class TestScanTimestamps(unittest.TestCase):
+    """started_at/finished_at are real wall-clock values, not blanks.
+
+    History records and exported reports read these fields, so a scan that
+    never stamps them renders "Started: —" and an empty history timestamp.
+    """
+
+    def test_module_runners_are_decorated(self):
+        for name in (
+            "run_email_scan",
+            "run_username_scan",
+            "run_system_scan",
+            "run_file_metadata_scan",
+            "run_browser_scan",
+            "run_full_scan",
+        ):
+            runner = getattr(scan_controller, name)
+            self.assertTrue(
+                getattr(runner, "__wrapped__", None) is not None,
+                f"{name} is not wrapped by _timestamped_scan",
+            )
+
+    def test_decorator_stamps_result_and_preserves_calls(self):
+        seen = []
+
+        @scan_controller._timestamped_scan
+        async def fake(positional, *, keyword=None):
+            seen.append((positional, keyword))
+            return _module_result("Test", "Test Footprint")
+
+        result = asyncio.run(fake("value", keyword="kw"))
+
+        self.assertEqual(seen, [("value", "kw")])
+        self.assertTrue(result.started_at.endswith("Z"))
+        self.assertTrue(result.finished_at.endswith("Z"))
+        self.assertLessEqual(result.started_at, result.finished_at)
+
+    def test_full_scan_result_is_timestamped(self):
+        system = _module_result("System", "System Footprint")
+        browser = _module_result("Browser", "Browser Footprint")
+        with (
+            patch.object(
+                scan_controller, "run_system_scan", AsyncMock(return_value=system)
+            ),
+            patch.object(
+                scan_controller, "run_browser_scan", AsyncMock(return_value=browser)
+            ),
+        ):
+            combined = asyncio.run(run_full_scan(None))
+
+        self.assertTrue(combined.started_at.endswith("Z"))
+        self.assertTrue(combined.finished_at.endswith("Z"))
+        self.assertLessEqual(combined.started_at, combined.finished_at)
+
+
 if __name__ == "__main__":
     unittest.main()

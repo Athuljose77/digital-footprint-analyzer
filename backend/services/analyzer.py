@@ -53,27 +53,50 @@ async def analyze_username(
 
     found = len(results)
 
+    # Verification counters. A candidate that could not be confirmed is
+    # reported, but is never mixed into the confirmed total.
+    confirmed = int(result.get("confirmed_count", 0) or 0)
+    inconclusive = int(result.get("inconclusive_count", 0) or 0)
+    checked = int(result.get("checked_count", 0) or 0)
+    verification_enabled = bool(result.get("verification_enabled", False))
+
     # -------------------------
     # Username exposure score
     # -------------------------
 
-    if found == 0:
+    # Only profiles that were actually confirmed move the score when
+    # verification ran; otherwise the score falls back to the candidate count,
+    # and score_basis says which of the two was used.
+    if verification_enabled:
+        scored = confirmed
+        score_basis = (
+            f"Based on {confirmed} confirmed profile(s); "
+            f"{inconclusive} unverified candidate(s) were not counted."
+        )
+    else:
+        scored = found
+        score_basis = (
+            f"Based on {found} candidate(s) reported by the discovery tool; "
+            "page verification was turned off, so none were confirmed."
+        )
+
+    if scored == 0:
 
         exposure_score = 0
 
-    elif found <= 2:
+    elif scored <= 2:
 
         exposure_score = 20
 
-    elif found <= 5:
+    elif scored <= 5:
 
         exposure_score = 40
 
-    elif found <= 10:
+    elif scored <= 10:
 
         exposure_score = 60
 
-    elif found <= 20:
+    elif scored <= 20:
 
         exposure_score = 80
 
@@ -85,8 +108,21 @@ async def analyze_username(
         "type": "username",
         "input": username,
         "status": result.get("status"),
+        "message": result.get("message", ""),
         "profiles_found": found,
-        "platform_count": found,
+        "confirmed_count": confirmed,
+        "inconclusive_count": inconclusive,
+        # Kept for existing consumers: candidates that remain unverified.
+        "unknown_count": inconclusive,
+        # Platforms actually checked by the verification layer. This used to be
+        # the number of profiles found, which made the label say something the
+        # data did not.
+        "platform_count": checked,
+        "candidates_count": int(result.get("candidates_count", found) or 0),
+        "not_found_count": int(result.get("not_found_count", 0) or 0),
+        "verification_enabled": verification_enabled,
+        "score_basis": score_basis,
+        "checked_at": result.get("finished_at", ""),
         "exposure_score": exposure_score,
         "results": results
     }

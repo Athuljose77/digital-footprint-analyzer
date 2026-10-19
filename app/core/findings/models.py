@@ -14,6 +14,21 @@ def make_finding_id(*parts: Any) -> str:
     )
     return str(uuid.uuid5(uuid.NAMESPACE_URL, normalized or "digital-footprint-finding"))
 
+
+def make_identity_key(rule_id: Any, finding_type: Any, title: Any) -> str:
+    """
+    Create a stable identity for a finding that survives re-scans.
+
+    Only rule identity and title take part, so a finding keeps the same key
+    across runs even when its description, evidence, or severity change. The
+    key is what scan history compares on; it never encodes scan-specific data.
+    """
+    basis = "::".join(
+        str(part or "").strip().lower()
+        for part in (rule_id or finding_type, title)
+    )
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "identity::" + basis))
+
 CheckStatus = Literal["COMPLETED", "PARTIAL", "FAILED", "UNAVAILABLE"]
 DiscoveryOutcome = Literal["FOUND", "NOT_FOUND", "UNKNOWN"]
 
