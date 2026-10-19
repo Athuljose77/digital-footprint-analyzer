@@ -63,6 +63,40 @@ class TestStartupCatalogue(unittest.TestCase):
         self.assertIsNone(explain("Totally Unknown Agent"))
         self.assertIsNone(explain("mystery-daemon --start"))
 
+    def test_known_words_inside_larger_words_do_not_match(self):
+        # Substring matching used to claim these as chat/media apps; a
+        # security tool must stay silent rather than guess.
+        for probe in ("upsteam", "steamship", "signaling", "mysignal",
+                      "teamsync", "adobeanalysis", "steamdeck-helper"):
+            with self.subTest(probe=probe):
+                self.assertIsNone(explain(probe), msg=probe)
+
+    def test_remote_access_tools_are_not_mislabelled_as_chat_apps(self):
+        # TeamsViewer is remote-access software from a different vendor.
+        # It must not receive the chat-app note, while real Teams entries
+        # still do.
+        teams_note = "Third-party"
+        self.assertIsNone(explain(r"C:\Program Files\TeamsViewer\TeamsViewer.exe"))
+        self.assertIn(teams_note, explain("Microsoft Teams"))
+        self.assertIn(teams_note, explain("MSTeams.exe"))
+        self.assertIn(teams_note, explain("ms-teams --autostart"))
+
+    def test_common_compound_variants_still_match(self):
+        # Boundary matching must not lose the common explicit binary names.
+        probes = {
+            "bluetoothd": "Bluetooth",
+            "VBoxTray.exe": "VirtualBox",
+            "iTunesHelper.exe": "Apple",
+            "RtkAudUService64.exe": "Audio driver",
+            "snapd.service": "Snap",
+            "steam.exe": "Third-party",
+        }
+        for probe, fragment in probes.items():
+            with self.subTest(probe=probe):
+                summary = explain(probe)
+                self.assertIsNotNone(summary, msg=probe)
+                self.assertIn(fragment, summary, msg=probe)
+
     def test_empty_or_missing_input(self):
         self.assertIsNone(explain(""))
         self.assertIsNone(explain(None))
