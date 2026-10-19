@@ -33,6 +33,7 @@ class ScanWorker(QThread):
 
             timeout = self.options.get("network_timeout")
             process_mode = self.options.get("process_mode")
+            verify_candidates = self.options.get("verify_candidates")
 
             # Preference kwargs are only passed when the user actually set
             # one, so an unset preference keeps the exact original call
@@ -42,9 +43,13 @@ class ScanWorker(QThread):
                         else run_email_scan(self.target, timeout=timeout))
                 result = loop.run_until_complete(coro)
             elif self.scan_type == "Username":
-                coro = (run_username_scan(self.target) if timeout is None
-                        else run_username_scan(self.target, timeout=timeout))
-                result = loop.run_until_complete(coro)
+                kwargs = {}
+                if timeout is not None:
+                    kwargs["timeout"] = timeout
+                if verify_candidates is not None:
+                    kwargs["verify"] = bool(verify_candidates)
+                result = loop.run_until_complete(
+                    run_username_scan(self.target, **kwargs))
             elif self.scan_type == "System":
                 coro = (run_system_scan() if process_mode is None
                         else run_system_scan(process_mode=process_mode))

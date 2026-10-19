@@ -18,6 +18,18 @@ from app.ui import theme
 from app.ui.icons import icon, pixmap
 from app.ui.theme import R
 from app.ui.workers import ScanWorker
+from app.ui.pages import (
+    ActionCentrePage,
+    AssessmentPage,
+    EvidencePage,
+    HistoryPage,
+)
+from app.core import scan_coverage
+from app.core.history import HistoryStoreError, ScanHistoryStore
+from app.core.remediation import build_plan, plan_with_states
+from app.core.remediation.models import COMPLETED, DISMISSED, PENDING
+from app.core.remediation.store import ActionStateStore
+from app.core.risk import build_risk_summary
 from app.services.system_service import (
     DEFAULT_PROCESS_COLLECTOR_MODE,
     PROCESS_COLLECTOR_MODES,
@@ -101,59 +113,29 @@ SCAN_STATUS_GUIDANCE = {
     "ERROR": "Failed — the scan did not complete",
 }
 
-MODULE_LABELS = (
-    ("System", "System"),
-    ("Browser", "Browser"),
-    ("File & Metadata", "File"),
-)
+# Report module order/labels are owned by the shared coverage module so the
+# dashboard, the exposure score, and scan history always agree on what ran.
+MODULE_LABELS = scan_coverage.MODULE_LABELS
 
 
 def summarize_full_scan(result):
     """Build a read-only display summary for a Full Scan result.
 
-    Derives per-module states from the result message, limitation finding
-    titles, and footprint categories present. Never invents statistics:
+    Module states come from the shared coverage derivation, which uses the
+    authoritative per-module statuses when the scan controller recorded them
+    and otherwise derives them from result signals. Never invents statistics:
     every row traces back to result data.
     """
     findings = list(result.findings or [])
-    footprint = list(result.footprint_data or [])
-    message = (result.message or "").lower()
-
-    def _has_limitation(*keywords):
-        return any(
-            (getattr(f, "finding_type", "") or "") == "Scan Limitation"
-            and any(k.lower() in (f.title or "").lower() for k in keywords)
-            for f in findings
-        )
-
-    modules = []
-    categories = {getattr(fd, "category", "") for fd in footprint}
-    for category, label in MODULE_LABELS:
-        if category == "File & Metadata" and "no file selected" in message:
-            modules.append({
-                "name": label,
-                "state": "skipped",
-                "note": "Skipped — no file was selected",
-            })
-        elif _has_limitation(label, category):
-            if label == "Browser" and (
-                "unavailable" in message or "not available" in message
-            ):
-                modules.append({
-                    "name": label,
-                    "state": "limited",
-                    "note": "Unavailable on this platform — not scanned",
-                })
-            else:
-                modules.append({
-                    "name": label,
-                    "state": "limited",
-                    "note": "Had limitations — see limitation notes",
-                })
-        elif category in categories:
-            modules.append({"name": label, "state": "completed", "note": "Completed"})
-        else:
-            modules.append({"name": label, "state": "unknown", "note": "No data"})
+    # Display vocabulary. The shared derivation distinguishes "this module
+    # could not run on this platform" from "this module ran with limits";
+    # the dashboard has always rendered both as a limited module with an
+    # explanatory note, so the state is mapped back for display only. The
+    # precise state still drives scoring, confidence, and history.
+    modules = [dict(row) for row in scan_coverage.derive_scan_coverage(result)]
+    for row in modules:
+        if row.get("state") == scan_coverage.UNAVAILABLE:
+            row["state"] = scan_coverage.LIMITED
 
     severity_counts = {sev: 0 for sev in SEVERITY_ORDER}
     for f in findings:
@@ -167,7 +149,7 @@ def summarize_full_scan(result):
         ),
         "total_findings": len(findings),
         "severity_counts": severity_counts,
-        "evidence_records": len(footprint),
+        "evidence_records": len(result.footprint_data or []),
         "modules": modules,
     }
 
@@ -471,6 +453,29 @@ class MainWindow(QMainWindow):
         self._scan_history = []
         self._dashboard_summary = None
 
+        # Unified assessment state for the most recent scan: the one
+        # RiskSummary every page reads, the remediation plan built from it,
+        # and the board that pairs that plan with the user's own marks.
+        self.latest_risk = None
+        self.latest_result = None
+        self.latest_plan = None
+        self.latest_board = None
+
+        # Local persistence. Both stores keep everything on this device and
+        # are created lazily/tolerantly: a storage problem must never stop the
+        # application from scanning.
+        self._history_error = ""
+        try:
+            self.history_store = ScanHistoryStore()
+        except HistoryStoreError as error:
+            self.history_store = None
+            self._history_error = str(error)
+        try:
+            self.action_store = ActionStateStore()
+        except HistoryStoreError as error:
+            self.action_store = None
+            self._history_error = self._history_error or str(error)
+
         # Persisted user preferences. Read before any widget is built so the
         # first paint already uses the saved theme.
         self.app_settings = QSettings("DigitalFootprintAnalyzer", "Preferences")
@@ -527,6 +532,10 @@ class MainWindow(QMainWindow):
             ("My Footprint", "search"),
             ("Public Lookup", "globe"),
             ("Settings", "gear"),
+            ("Assessment", "target"),
+            ("Evidence", "layers"),
+            ("Actions", "shield_check"),
+            ("History", "clock"),
         ):
             item = QListWidgetItem(icon(icon_name), label)
             self.sidebar.addItem(item)
@@ -565,6 +574,7 @@ class MainWindow(QMainWindow):
         self.init_my_footprint_page()
         self.init_public_lookup_page()
         self.init_settings_page()
+        self.init_expanded_pages()
 
         self.sidebar.setCurrentRow(0)  # Default to the Home dashboard
 
@@ -642,6 +652,45 @@ class MainWindow(QMainWindow):
         self.home_cards["browser"].clicked.connect(self._start_dashboard_browser)
         self.home_cards["file"].clicked.connect(self._start_dashboard_file)
         self.home_cards["full"].clicked.connect(self._start_dashboard_full)
+
+        # Exposure assessment strip: the same RiskSummary the Assessment page,
+        # the reports, and history use. It shows nothing until a scan exists.
+        risk_card = QFrame()
+        risk_card.setObjectName("home_risk_card")
+        self.register_themed_widget(
+            risk_card,
+            "background-color: {panel_bg_alt}; border: 1px solid "
+            "{panel_border}; border-radius: 10px;")
+        risk_box = QHBoxLayout(risk_card)
+        risk_box.setContentsMargins(16, 12, 16, 12)
+        risk_box.setSpacing(16)
+
+        risk_text = QVBoxLayout()
+        risk_text.setSpacing(2)
+        risk_heading = QLabel("<b>Exposure assessment</b>")
+        risk_heading.setStyleSheet("font-size: 13px;")
+        risk_text.addWidget(risk_heading)
+        self.home_risk_label = QLabel()
+        self.home_risk_label.setWordWrap(True)
+        risk_text.addWidget(self.home_risk_label)
+        self.home_actions_label = QLabel()
+        self.home_actions_label.setWordWrap(True)
+        risk_text.addWidget(self.home_actions_label)
+        risk_box.addLayout(risk_text, stretch=1)
+
+        risk_buttons = QVBoxLayout()
+        risk_buttons.setSpacing(6)
+        self.home_assessment_btn = QPushButton("Open assessment")
+        self.home_assessment_btn.clicked.connect(self._open_assessment)
+        risk_buttons.addWidget(self.home_assessment_btn)
+        self.home_actions_btn = QPushButton("Open action centre")
+        self.home_actions_btn.clicked.connect(self._open_actions_page)
+        risk_buttons.addWidget(self.home_actions_btn)
+        self.home_history_btn = QPushButton("Scan history")
+        self.home_history_btn.clicked.connect(self._open_history_page)
+        risk_buttons.addWidget(self.home_history_btn)
+        risk_box.addLayout(risk_buttons)
+        layout.addWidget(risk_card)
 
         # Middle row: Footprint Overview (left) and Privacy Checklist (right)
         middle_row = QHBoxLayout()
@@ -917,10 +966,11 @@ class MainWindow(QMainWindow):
         if result.scan_type == "Full Scan":
             return summarize_full_scan(result)
         status = (result.status or "").strip().upper()
-        state = ("completed" if status == "COMPLETED"
-                 else "limited" if status in ("PARTIAL", "ERROR") else "unknown")
-        note = {"completed": "Completed", "limited": "Had limitations — see scan output",
-                "unknown": "No data"}[state]
+        # One module, so its coverage row is the whole picture. The shared
+        # derivation decides the state, including explicit unavailability.
+        module_row = scan_coverage.derive_scan_coverage(result)[0]
+        state = module_row["state"]
+        note = module_row["note"]
         severity_counts = {sev: 0 for sev in SEVERITY_ORDER}
         for f in result.findings or []:
             sev = (f.severity or "Info").strip().capitalize()
@@ -1007,6 +1057,7 @@ class MainWindow(QMainWindow):
             )
         state_marks = {"completed": (f"{R('ok_text')}", "✓"), "limited": (f"{R('warn_text')}", "⚠"),
                        "failed": (f"{R('err_text')}", "✕"), "skipped": (f"{R('muted')}", "⊘"),
+                       "unavailable": (f"{R('warn_text')}", "⊘"),
                        "unknown": (f"{R('faint_alt')}", "?")}
         module_lines = []
         for mod in summary.get("modules", []):
@@ -1424,6 +1475,27 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(input_layout)
 
+        # Privacy: this scan is the one place the app talks to third parties,
+        # and the verification option decides whether it also reads the
+        # candidate pages themselves.
+        self.verify_candidates_checkbox = QCheckBox(
+            "Verify each candidate by reading its public profile page")
+        self.verify_candidates_checkbox.setChecked(True)
+        self.verify_candidates_checkbox.setToolTip(
+            "When checked, each platform hit is fetched once (unauthenticated) "
+            "to check whether the page really shows this handle. Uncheck to "
+            "keep the lookup to the discovery tool alone.")
+        layout.addWidget(self.verify_candidates_checkbox)
+
+        self.privacy_note = QLabel(
+            "A Public Lookup contacts public platforms directly from this "
+            "device. Nothing is uploaded to us, no account is signed in, and "
+            "candidate pages are only read when verification is enabled above.")
+        self.privacy_note.setWordWrap(True)
+        self.register_themed_widget(self.privacy_note,
+                                   "color: {muted}; font-size: 11px;")
+        layout.addWidget(self.privacy_note)
+
         # Status
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
@@ -1525,18 +1597,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _render_theme_template(template):
-        return template.format(
-            panel_bg=R("panel_bg"),
-            panel_bg_alt=R("panel_bg_alt"),
-            panel_border=R("panel_border"),
-            text=R("text"),
-            muted=R("muted"),
-            faint=R("faint"),
-            accent=R("accent"),
-            accent_soft=theme.accent_soft(),
-            on_accent=theme.on_accent(),
-            panel_hover=theme.panel_hover(),
-        )
+        return theme.render_template(template)
 
     def _refresh_home_theme(self):
         """Restyle every registered widget and re-render themed HTML.
@@ -1555,6 +1616,20 @@ class MainWindow(QMainWindow):
         if hasattr(self, "dashboard_overview"):
             self.dashboard_overview.setHtml(
                 self._format_dashboard_overview_html())
+
+        # The expanded pages re-render their own token-based HTML; the widgets
+        # themselves were registered above.
+        for page in (getattr(self, "assessment_page", None),
+                     getattr(self, "evidence_page", None),
+                     getattr(self, "action_page", None),
+                     getattr(self, "history_page", None)):
+            if page is None:
+                continue
+            try:
+                page.refresh_theme()
+            except RuntimeError:
+                continue
+        self._refresh_home_assessment()
 
     def _render_view_findings(self, view_key):
         """Re-render one findings area from its held result."""
@@ -1818,6 +1893,171 @@ class MainWindow(QMainWindow):
         outer.addWidget(scroll)
         self.pages.addWidget(page)
 
+    def init_expanded_pages(self):
+        """Build the assessment, evidence, action, and history pages.
+
+        They are appended after Settings so the original four pages keep their
+        indices, and each one reads the shared RiskSummary / plan / stored
+        records rather than computing anything of its own.
+        """
+        self.assessment_page = AssessmentPage(self)
+        self.evidence_page = EvidencePage(self)
+        self.action_page = ActionCentrePage(self)
+        self.history_page = HistoryPage(self, store=self.history_store)
+
+        for page in (self.assessment_page, self.evidence_page,
+                     self.action_page, self.history_page):
+            self.pages.addWidget(page)
+            for widget, template in page.themed_widgets():
+                self.register_themed_widget(widget, template)
+
+        if self._history_error:
+            self.history_page.report_storage_problem(self._history_error)
+
+        self._refresh_home_assessment()
+
+    def show_page(self, name):
+        """Switch to one of the pages by name. Returns True when it exists."""
+        order = ("home", "footprint", "public", "settings", "assessment",
+                 "evidence", "actions", "history")
+        key = str(name or "").strip().lower()
+        if key not in order:
+            return False
+        index = order.index(key)
+        if index >= self.pages.count():
+            return False
+        self.sidebar.setCurrentRow(index)
+        self.pages.setCurrentIndex(index)
+        return True
+
+    def show_stored_findings(self, record):
+        """Open a stored scan's findings in the evidence explorer."""
+        self.evidence_page.show_findings(
+            record.findings,
+            source_label=f"stored scan {record.finished_at or ''}".strip())
+        self.show_page("evidence")
+        return True
+
+    def on_action_state_changed(self, action_key, state):
+        """Persist a mark the user made in the action centre."""
+        if self.action_store is not None:
+            try:
+                if state == "forget":
+                    self.action_store.forget(action_key)
+                else:
+                    self.action_store.set_state(action_key, state)
+            except Exception as error:  # storage problems never crash the UI
+                self.action_page.privacy_note.setText(
+                    f"Could not save that change: {error}")
+        self._refresh_actions()
+
+    def _refresh_actions(self):
+        """Rebuild the action board from the latest scan and stored marks."""
+        if self.latest_result is None:
+            self.action_page.set_board(None, plan=None)
+            return
+        plan = self.latest_plan
+        if plan is None:
+            plan = build_plan(self.latest_result)
+            self.latest_plan = plan
+        board = plan_with_states(plan, self.action_store)
+        self.latest_board = board
+        self.action_page.set_board(board, plan,
+                                   state_handler=self.on_action_state_changed)
+        # The dashboard strip reports the same pending count.
+        self._refresh_home_assessment()
+
+    def _record_scan_assessment(self, result):
+        """Score, plan, and store one finished scan.
+
+        This is the single place a finished scan becomes an assessment. Every
+        page, the exports, and the history read the same objects produced
+        here. Storage failures are reported in the UI, never raised.
+        """
+        try:
+            risk = build_risk_summary(result)
+        except Exception as error:  # a scoring bug must not hide the scan
+            self.assessment_page.subtitle_label.setText(
+                f"The assessment could not be built: {error}")
+            return
+
+        self.latest_risk = risk
+        self.latest_result = result
+        self.latest_plan = build_plan(result)
+
+        target = None
+        if (result.scan_type or "") in ("Email", "Username"):
+            target = self.target_input.text().strip() or None
+
+        if self.history_store is not None:
+            try:
+                self.history_store.record_scan(result, risk_summary=risk,
+                                               target=target)
+                self.history_page.storage_problem = ""
+            except HistoryStoreError as error:
+                self.history_page.report_storage_problem(
+                    f"Could not store this scan: {error}")
+
+        self.assessment_page.set_assessment(result, risk, target=target,
+                                            plan=self.latest_plan,
+                                            board=None)
+        self.evidence_page.show_result(result, source_label="Current scan")
+        self._refresh_actions()
+        self.history_page.refresh()
+        self._refresh_home_assessment()
+
+    def _refresh_home_assessment(self):
+        """Update the Home risk strip and pending-action count."""
+        if not hasattr(self, "home_risk_label"):
+            return
+
+        muted = R("muted")
+        risk = self.latest_risk
+        if risk is None:
+            self.home_risk_label.setText(
+                f"<span style='color: {muted};'>No scan yet. Run a scan to get "
+                "an exposure assessment.</span>")
+        else:
+            if risk.score is None:
+                score_text = "No score"
+                color = muted
+                reason = (f" — {html.escape(risk.unavailable_reason)}"
+                          if risk.unavailable_reason else "")
+            else:
+                score_text = f"{risk.score}/100"
+                color = R("sev_critical") if risk.score >= 76 else (
+                    R("sev_high") if risk.score >= 51 else (
+                        R("sev_medium") if risk.score >= 25 else (
+                            R("sev_low") if risk.score >= 1 else R("ok_text"))))
+                reason = ""
+            self.home_risk_label.setText(
+                f"<span style='font-size: 22px; font-weight: bold; color: {color};'>"
+                f"{score_text}</span> "
+                f"<b>{html.escape(risk.band)}</b> "
+                f"<span style='color: {muted};'>· confidence "
+                f"{html.escape(risk.confidence)} · "
+                f"{risk.counts.get('distinct_issues', 0)} distinct issue(s)"
+                f"{reason}</span>")
+
+        pending = self.latest_board.pending if self.latest_board else None
+        if pending is None:
+            actions_text = f"<span style='color: {muted};'>No actions yet.</span>"
+        elif pending == 0:
+            actions_text = f"<span style='color: {R('ok_text')};'>Nothing pending.</span>"
+        else:
+            actions_text = (f"<span style='color: {R('warn_text')};'><b>{pending}</b> "
+                            "action(s) pending.</span>")
+        self.home_actions_label.setText(actions_text)
+
+    def _open_assessment(self):
+        self.show_page("assessment")
+
+    def _open_actions_page(self):
+        self.show_page("actions")
+
+    def _open_history_page(self):
+        self.show_page("history")
+
     def _on_theme_radio_changed(self, mode):
         self.set_theme_mode(mode)
         self._notify_settings_changed(f"Theme updated to {mode}.")
@@ -2004,7 +2244,9 @@ class MainWindow(QMainWindow):
 
         self.worker = ScanWorker(
             scan_type, target,
-            options={"network_timeout": float(self.network_timeout)})
+            options={"network_timeout": float(self.network_timeout),
+                     "verify_candidates":
+                         self.verify_candidates_checkbox.isChecked()})
         self.worker.result_ready.connect(self.on_scan_complete)
         self.worker.error_occurred.connect(self.on_scan_error)
         self.worker.start()
@@ -3038,6 +3280,10 @@ class MainWindow(QMainWindow):
             self.public_sub_tabs.setCurrentIndex(0 if findings_count > 0 else 1)
 
         self._refresh_dashboard(result)
+        # One place turns a finished scan into an assessment, a stored record,
+        # and an action plan; the pages, the dashboard strip, and the exports
+        # all read that same result.
+        self._record_scan_assessment(result)
 
     def on_scan_error(self, err_msg):
         if hasattr(self, 'scan_btn'):
