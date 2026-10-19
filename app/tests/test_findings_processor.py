@@ -304,7 +304,31 @@ class TestFindingsProcessor(unittest.TestCase):
         # with it, not just restate the title.
         self.assertIn("launch automatically", findings[0].description)
         self.assertIn("startup settings", findings[0].description)
+        # Both entries are known, so the description says so and every
+        # evidence line carries its catalogue note.
+        self.assertIn("Every entry was matched", findings[0].description)
+        self.assertIn("OneDrive cloud sync", findings[0].evidence[0])
+        self.assertIn("Third-party", findings[0].evidence[1])
         self.assertEqual(findings[0].severity, "Low")
+
+    def test_system_footprint_startup_counts_unrecognised(self):
+        res = ScanResult(
+            scan_id="s3",
+            analysis_mode="My Footprint",
+            scan_type="System",
+            scan_category="System Footprint",
+            status="COMPLETED",
+            footprint_data=[
+                FootprintData(category="System", subcategory="Startup Applications", source="OS", data_type="startup_application", value="Name: Certificate and Key Storage | Path: /usr/bin/gnome-keyring-daemon --start --components=pkcs11", sensitivity="Low"),
+                FootprintData(category="System", subcategory="Startup Applications", source="OS", data_type="startup_application", value="Name: Mystery Agent | Path: /opt/mystery", sensitivity="Low"),
+            ]
+        )
+        findings = FindingsProcessor.extract_module_findings("system", res)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("1 of 2 entries", findings[0].description)
+        self.assertIn("not recognised", findings[0].description)
+        self.assertIn("password", findings[0].evidence[0])
+        self.assertIn("not recognised", findings[0].evidence[1])
 
     def test_system_footprint_unavailable_startup_filtered_out(self):
         res = ScanResult(
@@ -701,6 +725,11 @@ class TestScanControllerIntegration(unittest.TestCase):
                 self.assertEqual(finding.finding_type, "System Configuration")
                 self.assertEqual(finding.title, "Startup Programs (2 detected)")
                 self.assertIn("launch automatically", finding.description)
+                # Neither test app is in the catalogue, so the finding says
+                # so instead of guessing.
+                self.assertIn("not recognised", finding.description)
+                self.assertTrue(all("not recognised" in item
+                                    for item in finding.evidence))
 
     def test_controller_file_metadata_scan_processes_sensitive_findings(self):
         mock_data = {
