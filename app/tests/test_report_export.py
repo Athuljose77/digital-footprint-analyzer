@@ -281,6 +281,15 @@ class TestPdfReport(ReportTestCase):
         self.assertGreater(document.pageCount(), 0)
         raw = "".join(document.getAllText(index).text()
                       for index in range(document.pageCount()))
+        if not raw.strip():
+            # Qt's PDF text extractor can return an empty string for
+            # QPdfWriter output on Windows. Fall back to a pure-Python parser
+            # so these tests still verify the PDF's actual text layer.
+            from pypdf import PdfReader
+
+            raw = "\n".join(
+                page.extract_text() or "" for page in PdfReader(str(path)).pages
+            )
         # Qt wraps lines; collapse whitespace so assertions test content, not
         # line breaks.
         return _re.sub(r"\s+", " ", raw)

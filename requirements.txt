@@ -5,3 +5,4 @@ sherlock-project==0.16.2
 
 # Test runner
 pytest>=8.0
+pypdf>=5.0
