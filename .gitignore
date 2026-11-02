@@ -7,13 +7,19 @@ __pycache__/
 *.pyc
 *.py[cod]
 *.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
 
 # Virtual environment
-backend/venv/
+.venv/
+venv/
 
-# Node
-frontend/node_modules/
-frontend/dist/
+# Generated report and presentation artifacts
+reports/
 
 # IDE
 .vscode/

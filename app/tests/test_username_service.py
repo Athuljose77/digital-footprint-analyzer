@@ -3,9 +3,6 @@
 Everything here is offline. The verification layer takes an injectable page
 fetcher, so "the platform answered 200 with a login page" and "the request
 timed out" are ordinary test inputs, not network conditions.
-
-The backend directory is only on ``sys.path`` while these modules import, so
-the desktop's ``app`` package cannot be shadowed by ``backend/app.py``.
 """
 
 import asyncio
@@ -16,23 +13,20 @@ import sys
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from backend_imports import backend_path  # noqa: E402
-
-with backend_path():
-    from services import username_service as us
-    from services.username_service import (
-        CONFIRMED,
-        INCONCLUSIVE,
-        NOT_FOUND,
-        Candidate,
-        FetchOutcome,
-        check_username,
-        classify,
-        parse_candidates,
-        verify_candidates,
-    )
+from app.services import username_service as us
+from app.services.username_service import (
+    CONFIRMED,
+    INCONCLUSIVE,
+    NOT_FOUND,
+    Candidate,
+    FetchOutcome,
+    check_username,
+    classify,
+    parse_candidates,
+    verify_candidates,
+)
 
 SHERLOCK_OUTPUT = """
 [*] Checking username target on:

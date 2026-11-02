@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Athuljose77/digital-footprint-analyzer/security/advisories/new
+    about: Please report vulnerabilities privately instead of opening a public issue.
+  - name: Read the contribution guide
+    url: https://github.com/Athuljose77/digital-footprint-analyzer/blob/main/CONTRIBUTING.md
+    about: Setup, test, and pull-request expectations.

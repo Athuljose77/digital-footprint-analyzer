@@ -14,9 +14,9 @@ promises; this document shows how the code keeps them.
 
 [![System context diagram](diagrams/01-system-context.png)](diagrams/01-system-context.svg)
 
-The FastAPI backend is a thin HTTP wrapper around the *same* service modules
-the desktop app uses in-process (`backend/services/`). The desktop app never
-needs the API running; it imports those services directly.
+The desktop application is the whole product. Every scanner, including the
+email and username lookups, runs inside the same PySide6 process; there is no
+server process to start and no HTTP client to configure.
 
 ## Components
 
@@ -59,15 +59,6 @@ scoring and reports.
 | Username | The handle, plus profile-page requests: discovery runs a bundled Sherlock-style subprocess, then verification fetches public pages with `httpx`. | Public-address check and host/URL block reasons (SSRF), response size caps, timeouts, and candidates can never be counted as confirmed by mistake. |
 | Email | The address, to a breach/exposure check service. | Input validation, timeout; failures are reported as errors, never as results. |
 | System · Browser · File & Metadata | Nothing. All collection is local. | — |
-
-## Backend API (optional)
-
-[![Backend API request flow](diagrams/05-backend-api.png)](diagrams/05-backend-api.svg)
-
-Requests are validated before anything runs (the API starts subprocesses and
-makes outbound requests, so an unvalidated field would be a denial-of-service
-surface). Busy and timeout conditions return honest `429` / `504` JSON, and
-errors are never dressed up as results.
 
 ## Design rules the code keeps
 

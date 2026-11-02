@@ -12,14 +12,8 @@ flowchart LR
         breach["Email exposure check"]
     end
 
-    api["Optional HTTP API<br/>FastAPI (backend/)"]
-    clients["Other HTTP clients"]
-
     user --> app
     app --> os
     app --> data
     app -->|"username scan:<br/>discovery + page verification"| platforms
     app -->|"email scan"| breach
-    clients --> api
-    api --> platforms
-    api --> breach
