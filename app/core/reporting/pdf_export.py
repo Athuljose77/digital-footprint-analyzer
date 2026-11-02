@@ -243,7 +243,14 @@ def render_pdf(bundle: ReportBundle, path: Path) -> Path:
     requires an initialised ``QGuiApplication``. Without one Qt aborts the
     process, so the situation is detected and reported as an error instead.
     """
-    from PySide6.QtGui import QFont, QGuiApplication, QPageLayout, QPageSize, QPdfWriter, QTextDocument
+    from PySide6.QtGui import (
+        QFontDatabase,
+        QGuiApplication,
+        QPageLayout,
+        QPageSize,
+        QPdfWriter,
+        QTextDocument,
+    )
     from PySide6.QtCore import QMarginsF
 
     if QGuiApplication.instance() is None:
@@ -260,7 +267,9 @@ def render_pdf(bundle: ReportBundle, path: Path) -> Path:
     writer.setCreator(bundle.application)
 
     document = QTextDocument()
-    document.setDefaultFont(QFont("Helvetica", 10))
+    font = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
+    font.setPointSize(10)
+    document.setDefaultFont(font)
     document.setHtml(build_html(bundle))
 
     # QTextDocument::print returns nothing; failures surface as an empty or
