@@ -56,5 +56,5 @@ jobs:
 
       - name: Run tests
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_QPA_PLATFORM: ${{ runner.os == 'Linux' && 'offscreen' || 'windows' }}
         run: python -m pytest app/tests/ -q -p no:cacheprovider
