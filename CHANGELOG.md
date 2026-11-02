@@ -12,8 +12,11 @@ releases are tagged.
 
 - Open-source project documentation: license, contribution guide, security
   policy, code of conduct, changelog, roadmap, and GitHub issue/PR templates.
-- GitHub Actions test workflow for the offscreen desktop suite.
+- GitHub Actions test workflow for the offscreen desktop suite on Linux and
+  Windows.
 - Screenshots and platform support notes in the README.
+- An installable `digital-footprint-analyzer` package with the `dfa` and
+  `digital-footprint-analyzer` commands.
 
 ### Changed
 

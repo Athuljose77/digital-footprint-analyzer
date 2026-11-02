@@ -78,6 +78,13 @@ python3 -m venv .venv
 .venv/bin/python app/main.py
 ```
 
+Optional editable install with a command entry point:
+
+```bash
+.venv/bin/pip install -e .
+.venv/bin/dfa
+```
+
 ### Windows
 
 ```bat
@@ -85,6 +92,13 @@ python -m venv .venv
 .venv\Scripts\pip install --upgrade pip
 .venv\Scripts\pip install -r requirements.txt
 run_app.bat
+```
+
+Optional editable install with a command entry point:
+
+```bat
+.venv\Scripts\pip install -e .
+.venv\Scripts\dfa
 ```
 
 `run_app.bat` uses `.venv\Scripts\pythonw.exe`. The virtual environment is
@@ -102,9 +116,9 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest app/tests/ -q -p no:cachepr
 
 Current local result: **611 passed, 113 subtests passed**.
 
-The GitHub Actions workflow runs the same suite on Linux for pushes to `main`
-and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development
-workflow.
+The GitHub Actions workflow runs the same suite on Linux and Windows for pushes
+to `main` and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development workflow.
 
 ## Screenshots
 
@@ -133,6 +147,7 @@ app/core/history/               local SQLite history, comparison, sanitization
 app/core/remediation/           action catalogue, engine, persisted action state
 app/core/reporting/             one report bundle rendered to PDF / JSON / CSV
 app/services/                   system, browser, file-metadata, email, and username services
+pyproject.toml                  package metadata and dfa command entry points
 ```
 
 Every scan produces the shared data models in `app/models/common.py`. PDF,

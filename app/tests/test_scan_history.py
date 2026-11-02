@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -262,7 +263,7 @@ class TestDefaultLocation(unittest.TestCase):
         previous = os.environ.get("DFA_HISTORY_DB")
         os.environ["DFA_HISTORY_DB"] = "/tmp/custom-history.db"
         try:
-            self.assertEqual(str(default_db_path()), "/tmp/custom-history.db")
+            self.assertEqual(default_db_path(), Path("/tmp/custom-history.db"))
         finally:
             if previous is None:
                 os.environ.pop("DFA_HISTORY_DB", None)
@@ -274,13 +275,16 @@ class TestDefaultLocation(unittest.TestCase):
         previous_data = os.environ.get("DFA_DATA_DIR")
         try:
             os.environ["DFA_DATA_DIR"] = "/tmp/dfa-data-dir"
-            self.assertEqual(str(default_db_path()), "/tmp/dfa-data-dir/history.db")
+            self.assertEqual(
+                default_db_path(),
+                Path("/tmp/dfa-data-dir") / "history.db")
             os.environ.pop("DFA_DATA_DIR", None)
 
-            os.environ["XDG_DATA_HOME"] = "/tmp/dfa-xdg"
-            self.assertEqual(
-                str(default_db_path()),
-                "/tmp/dfa-xdg/DigitalFootprintAnalyzer/history.db")
+            if os.name != "nt":
+                os.environ["XDG_DATA_HOME"] = "/tmp/dfa-xdg"
+                self.assertEqual(
+                    default_db_path(),
+                    Path("/tmp/dfa-xdg") / "DigitalFootprintAnalyzer" / "history.db")
         finally:
             os.environ.pop("DFA_DATA_DIR", None)
             if previous_data is not None:

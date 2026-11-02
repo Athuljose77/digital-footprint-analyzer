@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "digital-footprint-analyzer"
+version = "1.0.0"
+description = "A local-first desktop application for auditing your digital footprint."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Athul Jose" },
+]
+keywords = [
+  "digital-footprint",
+  "privacy",
+  "security-tools",
+  "desktop-application",
+  "pyside6",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Win32 (MS Windows)",
+  "Environment :: X11 Applications :: Qt",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Topic :: System :: Systems Administration",
+]
+dependencies = [
+  "PySide6==6.11.2",
+  "pydantic==2.13.5",
+  "httpx==0.28.1",
+  "sherlock-project==0.16.2",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8",
+]
+
+[project.gui-scripts]
+dfa = "app.main:main"
+digital-footprint-analyzer = "app.main:main"
+
+[project.urls]
+Homepage = "https://github.com/Athuljose77/digital-footprint-analyzer"
+Issues = "https://github.com/Athuljose77/digital-footprint-analyzer/issues"
+Changelog = "https://github.com/Athuljose77/digital-footprint-analyzer/blob/main/CHANGELOG.md"
+Roadmap = "https://github.com/Athuljose77/digital-footprint-analyzer/blob/main/ROADMAP.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["app.tests*", "app.tests"]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]

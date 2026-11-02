@@ -5,13 +5,17 @@ Issues and pull requests are welcome for any item.
 
 ## Near term
 
-- Merge the cleaned desktop-only implementation into `main`.
-- Keep the GitHub Actions test workflow green.
-- Publish a tagged release with install/run instructions.
-- Add an installable package and a simple `dfa` command.
+- Keep the GitHub Actions test workflow green on Linux and Windows.
 - Add a short demo GIF and a sample exported report.
 - Label beginner-friendly issues and document the first contribution path.
 - Review dependency updates monthly.
+
+## Recently completed
+
+- Merged the cleaned desktop-only implementation into `main`.
+- Published the tagged `v1.0.0` release with install/run instructions.
+- Added an editable package install and the `dfa` command.
+- Added Linux and Windows CI coverage for the offscreen desktop suite.
 
 ## Later
 
