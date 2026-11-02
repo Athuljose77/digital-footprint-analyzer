@@ -4,4 +4,4 @@ httpx==0.28.1
 sherlock-project==0.16.2
 
 # Test runner
-pytest>=8.0
+pytest>=9.2.0
