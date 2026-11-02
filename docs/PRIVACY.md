@@ -2,8 +2,8 @@
 
 Digital Footprint Analyzer is a local-first tool. This document states exactly
 what leaves your machine, what is stored on it, and how to get rid of what is
-stored. It matches the code: `backend/services/email_service.py`,
-`backend/services/username_service.py`, `app/core/history/`,
+stored. It matches the code: `app/services/email_service.py`,
+`app/services/username_service.py`, `app/core/history/`,
 `app/core/remediation/store.py`, and `app/core/history/sanitize.py`.
 
 ## What leaves your machine
@@ -18,7 +18,7 @@ no update check.
 | **Username lookup** | Sherlock discovery queries the candidate platforms, then **one unauthenticated GET per candidate** to verify what the platform actually returned | You enter a handle on Public Lookup and start the lookup, with **Verify results** enabled (it is on by default; untick it to skip the verification pass) |
 | **Full Scan** | **None.** System, Browser, and File Metadata modules are entirely local. | Full Scan never includes email or username lookups, even if you used them before |
 
-Username verification bounds (`backend/services/username_service.py`):
+Username verification bounds (`app/services/username_service.py`):
 
 - At most **40 candidates** are fetched, at most **5 in flight**;
 - **8 s** per request and **30 s** for the whole pass; a 256 KB body cap per
@@ -35,10 +35,6 @@ Username verification bounds (`backend/services/username_service.py`):
 Timeouts, rate limits, DNS/TLS failures, and blocked addresses are reported as
 *failures of the check* (`inconclusive`), never as "profile does not exist" —
 see "Honesty" below.
-
-Optional backend/frontend: the FastAPI backend and the React frontend are for
-the same public lookups. The backend binds locally; running it does not add
-outbound traffic beyond the lookups above.
 
 ## What is stored locally
 

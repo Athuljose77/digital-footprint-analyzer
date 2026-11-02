@@ -1,10 +1,5 @@
 import uuid
-import sys
-import os
 import functools
-
-# Ensure backend modules can be imported
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from collections.abc import Awaitable, Callable
 
@@ -12,8 +7,8 @@ from app.models.common import ScanResult, FootprintData, Finding
 from app.core import scan_coverage
 from app.core.findings_processor import FindingsProcessor, _get_severity_rank
 from app.core.history.store import utc_now_iso
-from backend.services.email_service import check_email
-from backend.services.username_service import check_username
+from app.services.email_service import check_email
+from app.services.username_service import check_username
 
 _BROWSER_UNAVAILABLE_MESSAGE = (
     "Browser footprint scanning is not available on this platform."
