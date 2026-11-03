@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "digital-footprint-analyzer"
-version = "1.0.0"
+version = "1.0.1"
 description = "A local-first desktop application for auditing your digital footprint."
 readme = "README.md"
 requires-python = ">=3.12"
