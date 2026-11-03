@@ -10,6 +10,9 @@ releases are tagged.
 
 ### Added
 
+- A clearly labeled demo mode that loads a synthetic Full Scan into the real
+  assessment, evidence, action, and export views without scanning or writing
+  to persisted scan history or action state.
 - A synthetic sample report in PDF, JSON, and CSV formats, with a script to
   regenerate it from demo data.
 

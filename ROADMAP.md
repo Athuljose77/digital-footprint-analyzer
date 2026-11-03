@@ -18,6 +18,7 @@ Issues and pull requests are welcome for any item.
 - Added an editable package install and the `dfa` command.
 - Added Linux and Windows CI coverage for the offscreen desktop suite.
 - Added a synthetic sample report in PDF, JSON, and CSV formats.
+- Added a synthetic demo scan mode that never writes to scan history.
 
 ## Later
 

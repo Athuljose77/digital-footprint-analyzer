@@ -74,6 +74,9 @@ scoring and reports.
   methodology limits, and coverage gaps are shown, not hidden.
 - **One theme system.** All colours flow through `app/ui/theme.py`; pages
   re-render HTML and re-apply templates on a runtime theme switch.
+- **Demo data is synthetic and non-persistent.** `app/core/demo.py` builds a
+  clearly labeled sample result; demo mode never calls a collector and never
+  writes to scan history or the action-state store.
 
 ## Diagram sources
 

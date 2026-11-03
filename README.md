@@ -46,6 +46,11 @@ project takes the opposite approach:
 | **Full Scan** | System + Browser together, with File Metadata only when a file is selected |
 | **Public Lookup** | Email breach and username presence checks—the only features that use the network |
 
+Want to see the result format before scanning your own machine? Click
+**Explore demo scan** on Home to load a synthetic Full Scan into the real
+assessment, evidence, action, and export views. Demo data is clearly labeled
+and never writes to the persisted scan-history or action-state databases.
+
 | Page | What it adds |
 |---|---|
 | **Assessment** | One explainable exposure score (`exposure-v1`): severity breakdown, confidence, verification status, coverage gaps, and methodology limits. Export the same bundle as PDF, JSON, or CSV. |
@@ -114,7 +119,7 @@ directories.
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest app/tests/ -q -p no:cacheprovider
 ```
 
-Current local result: **611 passed, 113 subtests passed**.
+Current local result: **618 passed, 113 subtests passed** in about 4 minutes.
 
 The GitHub Actions workflow runs the same suite on Linux and Windows for pushes
 to `main` and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
@@ -143,6 +148,7 @@ app/ui/main_window.py           dashboard, footprint views, report HTML, setting
 app/ui/pages/                   Assessment, Evidence, Actions, and History pages
 app/ui/workers.py               QThread scan worker
 app/core/scan_controller.py     scan orchestration, including run_full_scan
+app/core/demo.py                synthetic Full Scan used by demo mode and samples
 app/core/findings_processor.py  canonical findings aggregation
 app/core/findings/              modular rule processor
 app/core/risk/                  exposure-v1 score and explanations

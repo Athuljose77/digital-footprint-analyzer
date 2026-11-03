@@ -25,6 +25,7 @@ from app.ui.pages import (
     HistoryPage,
 )
 from app.core import scan_coverage
+from app.core.demo import build_demo_result
 from app.core.history import HistoryStoreError, ScanHistoryStore
 from app.core.remediation import build_plan, plan_with_states
 from app.core.remediation.models import COMPLETED, DISMISSED, PENDING
@@ -468,6 +469,10 @@ class MainWindow(QMainWindow):
         self.latest_result = None
         self.latest_plan = None
         self.latest_board = None
+        # Demo mode is presentation-only: it loads a synthetic result so the
+        # app can be explored without scanning, and it never writes history.
+        self.demo_mode = False
+        self._pre_demo_state = None
 
         # Local persistence. Both stores keep everything on this device and
         # are created lazily/tolerantly: a storage problem must never stop the
@@ -573,9 +578,43 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(footer_frame)
         main_layout.addWidget(sidebar_container)
 
-        # Stacked widget for pages
+        # Stacked widget for pages, with a demo-mode banner above it.
         self.pages = QStackedWidget()
-        main_layout.addWidget(self.pages)
+        pages_container = QWidget()
+        pages_layout = QVBoxLayout(pages_container)
+        pages_layout.setContentsMargins(0, 0, 0, 0)
+        pages_layout.setSpacing(8)
+
+        self.demo_banner = QFrame()
+        self.demo_banner.setObjectName("demo_banner")
+        self.register_themed_widget(
+            self.demo_banner,
+            "QFrame#demo_banner {{ background-color: {accent_soft}; "
+            "border: 1px solid {accent}; border-radius: 8px; }}")
+        demo_banner_layout = QHBoxLayout(self.demo_banner)
+        demo_banner_layout.setContentsMargins(12, 7, 8, 7)
+        demo_banner_layout.setSpacing(8)
+        self.demo_banner_label = QLabel(
+            "<b>Demo mode</b> — showing synthetic data. No scan was run.")
+        self.demo_banner_label.setWordWrap(True)
+        self.register_themed_widget(
+            self.demo_banner_label,
+            "color: {text}; background: transparent; border: none;")
+        demo_banner_layout.addWidget(self.demo_banner_label, stretch=1)
+        self.demo_exit_btn = QPushButton("Exit demo")
+        self.demo_exit_btn.clicked.connect(self._exit_demo)
+        self.register_themed_widget(
+            self.demo_exit_btn,
+            "QPushButton {{ color: {accent}; background: transparent; "
+            "border: 1px solid {accent}; border-radius: 5px; "
+            "padding: 3px 10px; }} "
+            "QPushButton:hover {{ background-color: {accent}; "
+            "color: {on_accent}; }}")
+        demo_banner_layout.addWidget(self.demo_exit_btn)
+        self.demo_banner.hide()
+        pages_layout.addWidget(self.demo_banner)
+        pages_layout.addWidget(self.pages)
+        main_layout.addWidget(pages_container)
 
         # Initialize pages
         self.init_home_page()
@@ -684,6 +723,18 @@ class MainWindow(QMainWindow):
 
         risk_buttons = QVBoxLayout()
         risk_buttons.setSpacing(6)
+        self.home_demo_btn = QPushButton("Explore demo scan")
+        self.home_demo_btn.setToolTip(
+            "Load synthetic sample data without scanning this device.")
+        self.home_demo_btn.clicked.connect(self.load_demo_scan)
+        self.register_themed_widget(
+            self.home_demo_btn,
+            "QPushButton {{ border: 1px solid {accent}; border-radius: 6px; "
+            "padding: 5px 10px; color: {accent}; "
+            "background-color: {accent_soft}; }} "
+            "QPushButton:hover {{ background-color: {accent}; "
+            "color: {on_accent}; }}")
+        risk_buttons.addWidget(self.home_demo_btn)
         self.home_assessment_btn = QPushButton("Open assessment")
         self.home_assessment_btn.clicked.connect(self._open_assessment)
         risk_buttons.addWidget(self.home_assessment_btn)
@@ -963,16 +1014,148 @@ class MainWindow(QMainWindow):
         self._goto_my_footprint_tab(3)
         self.start_full_scan()
 
-    def _record_dashboard_entry(self, result):
+    def load_demo_scan(self):
+        """Load a synthetic Full Scan result without touching the device."""
+        if self.worker and self.worker.isRunning():
+            return False
+        if self.demo_mode:
+            self.show_page("assessment")
+            return True
+
+        self._pre_demo_state = {
+            "latest_result": self.latest_result,
+            "latest_risk": self.latest_risk,
+            "latest_plan": self.latest_plan,
+            "latest_board": self.latest_board,
+            "target": getattr(self.assessment_page, "target", None),
+            "scan_history": list(self._scan_history),
+            "dashboard_summary": self._dashboard_summary,
+            "full_result": self._last_results.get("full"),
+            "full_expanded": set(self._expanded_cards.get("full", set())),
+            "full_collapsed_evidence": set(
+                self._collapsed_evidence.get("full", set())),
+            "full_expanded_records": set(
+                self._expanded_evidence_records.get("full", set())),
+        }
+        self.on_scan_complete(build_demo_result(), demo=True)
+        self.show_page("assessment")
+        return True
+
+    def _set_demo_mode(self, active):
+        """Show or hide the demo banner and window-title marker."""
+        self.demo_mode = bool(active)
+        self.demo_banner.setVisible(self.demo_mode)
+        self.setWindowTitle(
+            "Digital Footprint Analyzer — Demo" if self.demo_mode
+            else "Digital Footprint Analyzer")
+
+    def _exit_demo(self, navigate=True):
+        """Leave demo mode and restore the previous session view.
+
+        Synthetic results are discarded; the persisted scan history was never
+        touched, and the in-session dashboard history is restored to its
+        pre-demo state.
+        """
+        if not self.demo_mode:
+            return
+        state = self._pre_demo_state or {}
+        self._set_demo_mode(False)
+
+        # Restore the previous Full Scan view if one existed; otherwise drop
+        # the synthetic result and reset the view.
+        full_result = state.get("full_result")
+        if full_result is not None:
+            self._last_results["full"] = full_result
+            self._expanded_cards["full"] = set(
+                state.get("full_expanded") or set())
+            self._collapsed_evidence["full"] = set(
+                state.get("full_collapsed_evidence") or set())
+            self._expanded_evidence_records["full"] = set(
+                state.get("full_expanded_records") or set())
+
+            findings_count = len(full_result.findings or [])
+            evidence_count = len(full_result.footprint_data or [])
+            self.full_scan_status_label.setText(
+                f"Status: {full_result.status} | Message: {full_result.message}")
+            self.full_scan_sub_tabs.setTabText(
+                0, f"Findings ({findings_count})")
+            self.full_scan_sub_tabs.setTabText(
+                1, f"Collected Evidence ({evidence_count})")
+            self.full_scan_findings_area.setHtml(self.format_findings_html(
+                full_result.findings,
+                evidence_count=evidence_count,
+                scan_status=full_result.status,
+                expanded=self._expanded_cards["full"],
+                summary=summarize_full_scan(full_result),
+            ))
+            self.full_scan_results_area.setHtml(
+                self.format_full_scan_evidence_html(
+                    full_result,
+                    query=self.full_evidence_search.text(),
+                    module=self._full_evidence_module_filter(),
+                ))
+            self.full_scan_sub_tabs.setCurrentIndex(
+                0 if findings_count > 0 else 1)
+        else:
+            self._last_results.pop("full", None)
+            self._expanded_cards.pop("full", None)
+            self._collapsed_evidence.pop("full", None)
+            self._expanded_evidence_records.pop("full", None)
+            for attr in ("full_scan_findings_area", "full_scan_results_area"):
+                area = getattr(self, attr, None)
+                if area is not None:
+                    area.clear()
+            for index, label in ((0, "Findings"), (1, "Collected Evidence")):
+                self.full_scan_sub_tabs.setTabText(index, label)
+            self.full_scan_status_label.setText("")
+        self.full_scan_btn.setEnabled(True)
+        self.full_scan_select_btn.setEnabled(True)
+        self.full_scan_clear_btn.setEnabled(self.full_scan_file_path is not None)
+
+        self.latest_result = state.get("latest_result")
+        self.latest_risk = state.get("latest_risk")
+        self.latest_plan = state.get("latest_plan")
+        self.latest_board = state.get("latest_board")
+
+        if self.latest_result is not None and self.latest_risk is not None:
+            self.assessment_page.set_assessment(
+                self.latest_result,
+                self.latest_risk,
+                target=state.get("target"),
+                plan=self.latest_plan,
+                board=self.latest_board,
+            )
+            self.evidence_page.show_result(
+                self.latest_result, source_label="Current scan")
+            self._refresh_actions()
+        else:
+            self.assessment_page.clear()
+            self.evidence_page.clear()
+            self.action_page.clear()
+            self._refresh_home_assessment()
+
+        self._scan_history = list(state.get("scan_history") or [])
+        self._dashboard_summary = state.get("dashboard_summary")
+        self._render_dashboard_history()
+        self._pre_demo_state = None
+        if navigate:
+            self.show_page("home")
+
+    def _leave_demo_for_scan(self):
+        """Discard a demo view before starting a real scan."""
+        if self.demo_mode:
+            self._exit_demo(navigate=False)
+
+    def _record_dashboard_entry(self, result, demo=False):
         """Build a session history entry from a finished ScanResult.
 
         Presentation-only: findings/evidence counts and module labels are
         read straight from the result. History is bounded in memory and
         never persisted.
         """
-        scan_type = result.scan_type or "Unknown"
+        scan_type = "Demo scan" if demo else (result.scan_type or "Unknown")
         summary = self._dashboard_summary_for(result)
-        if scan_type == "Full Scan":
+        if result.scan_type == "Full Scan":
             attempted = [m for m in summary["modules"] if m["state"] != "skipped"]
             done = [m for m in attempted if m["state"] == "completed"]
             modules_label = " + ".join(m["name"] for m in attempted) or scan_type
@@ -990,6 +1173,7 @@ class MainWindow(QMainWindow):
             "status": (result.status or "").strip().upper(),
             "severity_counts": dict(summary["severity_counts"]),
             "module_rows": [dict(m) for m in summary["modules"]],
+            "demo": bool(demo),
         }
 
     def _dashboard_summary_for(self, result):
@@ -1020,11 +1204,15 @@ class MainWindow(QMainWindow):
                          "state": state, "note": note}],
         }
 
-    def _refresh_dashboard(self, result):
+    def _refresh_dashboard(self, result, demo=False):
         """Fold a finished scan into the dashboard history and re-render."""
         self._dashboard_summary = self._dashboard_summary_for(result)
-        self._scan_history.insert(0, self._record_dashboard_entry(result))
+        self._scan_history.insert(0, self._record_dashboard_entry(result, demo=demo))
         del self._scan_history[20:]
+        self._render_dashboard_history()
+
+    def _render_dashboard_history(self):
+        """Render the session history selector and recent-scans table."""
         self.overview_scan_combo.blockSignals(True)
         self.overview_scan_combo.clear()
         self.overview_scan_combo.addItem("Last Scan")
@@ -2024,6 +2212,10 @@ class MainWindow(QMainWindow):
 
     def on_action_state_changed(self, action_key, state):
         """Persist a mark the user made in the action centre."""
+        if self.demo_mode:
+            self.action_page.privacy_note.setText(
+                "Demo actions are not saved. Run a real scan to track progress.")
+            return
         if self.action_store is not None:
             try:
                 if state == "forget":
@@ -2044,19 +2236,25 @@ class MainWindow(QMainWindow):
         if plan is None:
             plan = build_plan(self.latest_result)
             self.latest_plan = plan
-        board = plan_with_states(plan, self.action_store)
+        # Demo findings must not sync into or read from the persisted action
+        # store, otherwise marking a demo action could affect a later scan.
+        store = None if self.demo_mode else self.action_store
+        board = plan_with_states(plan, store)
         self.latest_board = board
         self.action_page.set_board(board, plan,
                                    state_handler=self.on_action_state_changed)
         # The dashboard strip reports the same pending count.
         self._refresh_home_assessment()
 
-    def _record_scan_assessment(self, result):
+    def _record_scan_assessment(self, result, store_history=True):
         """Score, plan, and store one finished scan.
 
         This is the single place a finished scan becomes an assessment. Every
         page, the exports, and the history read the same objects produced
         here. Storage failures are reported in the UI, never raised.
+
+        Demo mode passes ``store_history=False``: synthetic findings should
+        never appear in the user's persisted scan history.
         """
         try:
             risk = build_risk_summary(result)
@@ -2073,7 +2271,7 @@ class MainWindow(QMainWindow):
         if (result.scan_type or "") in ("Email", "Username"):
             target = self.target_input.text().strip() or None
 
-        if self.history_store is not None:
+        if store_history and self.history_store is not None:
             try:
                 self.history_store.record_scan(result, risk_summary=risk,
                                                target=target)
@@ -2277,6 +2475,7 @@ class MainWindow(QMainWindow):
     def start_system_scan(self):
         if self.worker and self.worker.isRunning():
             return
+        self._leave_demo_for_scan()
 
         self.sys_scan_btn.setEnabled(False)
         self.sys_status_label.setText("Scanning system footprint... Please wait, this may take a moment.")
@@ -2295,6 +2494,7 @@ class MainWindow(QMainWindow):
     def start_browser_scan(self):
         if self.worker and self.worker.isRunning():
             return
+        self._leave_demo_for_scan()
 
         self.browser_scan_btn.setEnabled(False)
         self.browser_status_label.setText("Scanning browsers... Please wait.")
@@ -2311,6 +2511,7 @@ class MainWindow(QMainWindow):
     def start_scan(self):
         if self.worker and self.worker.isRunning():
             return
+        self._leave_demo_for_scan()
 
         target = self.target_input.text().strip()
         scan_type = self.scan_type_combo.currentText()
@@ -2359,6 +2560,7 @@ class MainWindow(QMainWindow):
     def start_file_analysis(self):
         if self.worker and self.worker.isRunning():
             return
+        self._leave_demo_for_scan()
 
         file_path = getattr(self, 'selected_file_path', None)
         if not file_path:
@@ -2401,6 +2603,7 @@ class MainWindow(QMainWindow):
     def start_full_scan(self):
         if self.worker and self.worker.isRunning():
             return
+        self._leave_demo_for_scan()
 
         self.full_scan_btn.setEnabled(False)
         self.full_scan_select_btn.setEnabled(False)
@@ -3256,7 +3459,12 @@ class MainWindow(QMainWindow):
     # SCAN COMPLETION AND ERROR DISPATCH
     # --------------------------------------------------------
 
-    def on_scan_complete(self, result):
+    def on_scan_complete(self, result, demo=False):
+        if demo:
+            self._set_demo_mode(True)
+        elif self.demo_mode:
+            self._exit_demo(navigate=False)
+
         is_sys = (result.scan_type == "System")
         is_file = (result.scan_type == "File & Metadata")
         is_browser = (result.scan_type == "Browser")
@@ -3362,11 +3570,11 @@ class MainWindow(QMainWindow):
 
             self.public_sub_tabs.setCurrentIndex(0 if findings_count > 0 else 1)
 
-        self._refresh_dashboard(result)
+        self._refresh_dashboard(result, demo=demo)
         # One place turns a finished scan into an assessment, a stored record,
         # and an action plan; the pages, the dashboard strip, and the exports
-        # all read that same result.
-        self._record_scan_assessment(result)
+        # all read that same result. Demo data stays out of persisted history.
+        self._record_scan_assessment(result, store_history=not demo)
 
     def on_scan_error(self, err_msg):
         if hasattr(self, 'scan_btn'):
