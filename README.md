@@ -130,6 +130,9 @@ development workflow.
 |---|---|
 | ![Actions page](docs/assets/actions-light.png) | ![Home dashboard](docs/assets/home-dark.png) |
 
+A synthetic example of the exported report is available in
+[docs/sample-report](docs/sample-report/README.md).
+
 ## Architecture
 
 ```text
@@ -148,6 +151,7 @@ app/core/remediation/           action catalogue, engine, persisted action state
 app/core/reporting/             one report bundle rendered to PDF / JSON / CSV
 app/services/                   system, browser, file-metadata, email, and username services
 pyproject.toml                  package metadata and dfa command entry points
+scripts/generate_sample_report.py  regenerates the synthetic sample report
 ```
 
 Every scan produces the shared data models in `app/models/common.py`. PDF,

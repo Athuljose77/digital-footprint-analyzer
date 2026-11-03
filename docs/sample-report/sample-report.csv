@@ -1,0 +1,8 @@
+﻿record_type,title,severity,status,module,verification,confidence,priority,user_state,detail,evidence,score,band,methodology,coverage_key,note
+assessment,Full Scan report — d***@example.com,,PARTIAL,,,medium,,,High: 1; Medium: 1,,48,Moderate,exposure-v1,browser:partial|file_metadata:none|system:full,"These modules did not provide usable coverage, so findings from them are unknown: File."
+finding,Demo address appears in a breach data set,High,Unremediated,email,provider-verified,high,,,"A synthetic demo address appears in a simulated breach record. This is sample data, not a real lookup.",emails: 3,,,,,Email Breach
+finding,Demo browser extension can read browsing data,Medium,Unremediated,browser,direct-observation,high,,,A simulated extension has broad permissions. Review extensions you do not recognise.,"extension: Demo Helper 1.0 | permissions: tabs, history",,,,,Browser Extension
+coverage,System,,completed,system,,,,,,,,,,,Synthetic demo data
+coverage,Browser,,limited,browser,,,,,,,,,,,Synthetic demo data; one profile
+coverage,File,,skipped,file_metadata,,,,,,,,,,,No file selected in this demo
+recommendation,Change the exposed password for this account,provider-verified,,email,,high,High,pending,"Credentials leaked in a breach stay useful to attackers for years, because people reuse passwords across services.",Sign in to this account and change the password to one you have not used anywhere else. | Change that same password on every other account that used it. | Turn on two-factor authentication for the account. | Review the account's recent activity and signed-in devices for anything you do not recognise.,,,,,https://haveibeenpwned.com/ https://www.cisa.gov/secure-our-world/use-strong-passwords https://www.cisa.gov/mfa

@@ -1,0 +1,167 @@
+{
+  "schema_version": "dfa-report-v1",
+  "generated_at": "2026-11-03T13:02:06Z",
+  "application": "Digital Footprint Analyzer",
+  "assessment": {
+    "scan_type": "Full Scan",
+    "status": "PARTIAL",
+    "target_label": "d***@example.com",
+    "started_at": "2026-11-03T10:00:00Z",
+    "finished_at": "2026-11-03T10:00:05Z",
+    "score": 48,
+    "band": "Moderate",
+    "score_available": true,
+    "unavailable_reason": "",
+    "points": 23.0,
+    "confidence": "medium",
+    "confidence_reasons": [
+      "part of the scan completed with limitations"
+    ],
+    "severity_breakdown": {
+      "Critical": 0,
+      "High": 1,
+      "Medium": 1,
+      "Low": 0,
+      "Info": 0
+    },
+    "counts": {
+      "distinct_issues": 2,
+      "confirmed": 2,
+      "potential": 0,
+      "inconclusive": 0,
+      "coverage_findings": 0,
+      "uncovered_modules": 1,
+      "collection_failures": 0,
+      "unsupported_checks": 0
+    },
+    "factors": [
+      {
+        "name": "Distinct issues",
+        "detail": "2 distinct issue(s) after merging duplicate findings from 2 reporting module(s)."
+      },
+      {
+        "name": "Severity weight",
+        "detail": "23.0 point(s) from severity weights (Critical 25, High 15, Medium 8, Low 3, Info 1) scaled by evidence confidence (verified 1.0, provider-reported 0.5, unconfirmed 0.5)."
+      },
+      {
+        "name": "Coverage",
+        "detail": "2 of 3 module(s) produced usable coverage; gaps: File."
+      },
+      {
+        "name": "Methodology",
+        "detail": "exposure-v1: index = round(100 x (1 - e^(-points/35))), capped at 3 issues per rule."
+      }
+    ],
+    "caveats": [
+      "These modules did not provide usable coverage, so findings from them are unknown: File."
+    ],
+    "methodology_version": "exposure-v1",
+    "coverage_key": "browser:partial|file_metadata:none|system:full"
+  },
+  "coverage": [
+    {
+      "name": "System",
+      "key": "system",
+      "state": "completed",
+      "note": "Synthetic demo data"
+    },
+    {
+      "name": "Browser",
+      "key": "browser",
+      "state": "limited",
+      "note": "Synthetic demo data; one profile"
+    },
+    {
+      "name": "File",
+      "key": "file_metadata",
+      "state": "skipped",
+      "note": "No file selected in this demo"
+    }
+  ],
+  "findings": [
+    {
+      "identity_key": "9b40f1b8-8ed6-5dcb-b7d9-a7df72893af0",
+      "title": "Demo address appears in a breach data set",
+      "description": "A synthetic demo address appears in a simulated breach record. This is sample data, not a real lookup.",
+      "finding_type": "Email Breach",
+      "category": "Exposure",
+      "severity": "High",
+      "status": "Unremediated",
+      "module": "email",
+      "sources": [
+        "email"
+      ],
+      "verification": "provider-verified",
+      "confidence": "high",
+      "why_it_matters": "The address appears in a breach data set. Credentials exposed in old breaches are still reused, so an old leak can open a current account.",
+      "evidence": [
+        "emails: 3"
+      ]
+    },
+    {
+      "identity_key": "4457fe37-6666-5b25-af39-b86fb820a9d6",
+      "title": "Demo browser extension can read browsing data",
+      "description": "A simulated extension has broad permissions. Review extensions you do not recognise.",
+      "finding_type": "Browser Extension",
+      "category": "Configuration",
+      "severity": "Medium",
+      "status": "Unremediated",
+      "module": "browser",
+      "sources": [
+        "browser"
+      ],
+      "verification": "direct-observation",
+      "confidence": "high",
+      "why_it_matters": "This record was collected from your own device or from a public source and is listed so you can review it.",
+      "evidence": [
+        "extension: Demo Helper 1.0",
+        "permissions: tabs, history"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "action_key": "rotate-exposed-password:general",
+      "title": "Change the exposed password for this account",
+      "priority": "High",
+      "module": "email",
+      "why_it_matters": "Credentials leaked in a breach stay useful to attackers for years, because people reuse passwords across services.",
+      "steps": [
+        "Sign in to this account and change the password to one you have not used anywhere else.",
+        "Change that same password on every other account that used it.",
+        "Turn on two-factor authentication for the account.",
+        "Review the account's recent activity and signed-in devices for anything you do not recognise."
+      ],
+      "docs": [
+        {
+          "label": "Have I Been Pwned — check an address against known breaches",
+          "url": "https://haveibeenpwned.com/"
+        },
+        {
+          "label": "CISA — use strong passwords",
+          "url": "https://www.cisa.gov/secure-our-world/use-strong-passwords"
+        },
+        {
+          "label": "CISA — multi-factor authentication",
+          "url": "https://www.cisa.gov/mfa"
+        }
+      ],
+      "verification": "provider-verified",
+      "confidence": "high",
+      "verify_first": false,
+      "user_state": "pending",
+      "present_in_latest_scan": true,
+      "note": ""
+    }
+  ],
+  "notes": [
+    "Generated locally on this device from a single scan. No data was sent anywhere to produce this report.",
+    "Evidence is shortened and sensitive values (credentials, tokens, full file paths, email local parts) are masked. Re-run the scan for the raw values.",
+    "Only the modules listed under coverage ran. Anything they cannot see was not assessed.",
+    "Not detecting a finding is not evidence that the exposure does not exist.",
+    "Findings that a provider merely reported are leads until you verify them."
+  ],
+  "is_empty": false,
+  "empty_reason": "",
+  "title": "Full Scan report — d***@example.com"
+}

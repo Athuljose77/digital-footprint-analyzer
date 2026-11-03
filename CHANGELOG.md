@@ -8,6 +8,11 @@ releases are tagged.
 
 ## [Unreleased]
 
+### Added
+
+- A synthetic sample report in PDF, JSON, and CSV formats, with a script to
+  regenerate it from demo data.
+
 ## [1.0.1] - 2026-11-03
 
 ### Added

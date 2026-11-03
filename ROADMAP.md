@@ -6,16 +6,18 @@ Issues and pull requests are welcome for any item.
 ## Near term
 
 - Keep the GitHub Actions test workflow green on Linux and Windows.
-- Add a short demo GIF and a sample exported report.
+- Add a short demo GIF.
 - Label beginner-friendly issues and document the first contribution path.
 - Review dependency updates monthly.
 
 ## Recently completed
 
 - Merged the cleaned desktop-only implementation into `main`.
-- Published the tagged `v1.0.0` release with install/run instructions.
+- Published tagged `v1.0.0` and `v1.0.1` releases with install/run
+  instructions.
 - Added an editable package install and the `dfa` command.
 - Added Linux and Windows CI coverage for the offscreen desktop suite.
+- Added a synthetic sample report in PDF, JSON, and CSV formats.
 
 ## Later
 
