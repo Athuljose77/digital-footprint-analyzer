@@ -13,7 +13,7 @@ Issues and pull requests are welcome for any item.
 ## Recently completed
 
 - Merged the cleaned desktop-only implementation into `main`.
-- Published tagged `v1.0.0` and `v1.0.1` releases with install/run
+- Published tagged `v1.0.0`, `v1.0.1`, and `v1.1.0` releases with install/run
   instructions.
 - Added an editable package install and the `dfa` command.
 - Added Linux and Windows CI coverage for the offscreen desktop suite.

@@ -8,6 +8,8 @@ releases are tagged.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-04
+
 ### Added
 
 - A clearly labeled demo mode that loads a synthetic Full Scan into the real
@@ -15,6 +17,10 @@ releases are tagged.
   to persisted scan history or action state.
 - A synthetic sample report in PDF, JSON, and CSV formats, with a script to
   regenerate it from demo data.
+
+### Changed
+
+- Updated PySide6 to 6.12.0 and Pydantic to 2.14.2.
 
 ## [1.0.1] - 2026-11-03
 
