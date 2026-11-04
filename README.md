@@ -173,7 +173,8 @@ report cannot disagree with the number on screen.
 More detail: [Architecture](docs/ARCHITECTURE.md) ·
 [Risk methodology](docs/RISK_METHODOLOGY.md) ·
 [Report schema](docs/REPORT_SCHEMA.md) ·
-[Privacy](docs/PRIVACY.md).
+[Privacy](docs/PRIVACY.md) ·
+[Troubleshooting](docs/TROUBLESHOOTING.md).
 
 ## Privacy
 
