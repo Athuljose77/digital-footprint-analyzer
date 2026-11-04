@@ -8,6 +8,12 @@ releases are tagged.
 
 ## [Unreleased]
 
+### Added
+
+- A CI smoke test that builds the package, launches the installed `dfa` GUI
+  entry point, and exits after the first event-loop turn.
+- A short demo-mode walkthrough GIF and a script to regenerate it.
+
 ## [1.1.0] - 2026-11-04
 
 ### Added

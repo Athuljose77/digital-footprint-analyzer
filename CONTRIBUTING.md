@@ -41,6 +41,14 @@ Run the app:
 .venv/bin/python app/main.py
 ```
 
+## Finding work
+
+Look for issues labeled `good first issue` for a scoped starting point, or
+`help wanted` for larger changes. Comment on an issue before starting so effort
+is not duplicated. For a new idea, open a feature request that describes the
+user problem, the proposed behaviour, and how the change would report
+limitations or unavailable data.
+
 ## Tests
 
 The test suite is offline-safe. Network fetchers are injected, Qt runs in

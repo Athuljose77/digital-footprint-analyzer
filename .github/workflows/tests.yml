@@ -52,7 +52,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -e . --no-deps
+          pip install . --no-deps
+
+      - name: Smoke test installed GUI
+        env:
+          QT_QPA_PLATFORM: ${{ runner.os == 'Linux' && 'offscreen' || 'windows' }}
+          DFA_DATA_DIR: ${{ runner.temp }}/dfa-smoke-data
+        run: dfa --smoke-test
 
       - name: Run tests
         env:

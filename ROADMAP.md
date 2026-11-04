@@ -6,8 +6,6 @@ Issues and pull requests are welcome for any item.
 ## Near term
 
 - Keep the GitHub Actions test workflow green on Linux and Windows.
-- Add a short demo GIF.
-- Label beginner-friendly issues and document the first contribution path.
 - Review dependency updates monthly.
 
 ## Recently completed
@@ -19,6 +17,10 @@ Issues and pull requests are welcome for any item.
 - Added Linux and Windows CI coverage for the offscreen desktop suite.
 - Added a synthetic sample report in PDF, JSON, and CSV formats.
 - Added a synthetic demo scan mode that never writes to scan history.
+- Added a short demo-mode walkthrough GIF and generator script.
+- Added an installed-GUI startup smoke test to Linux and Windows CI.
+- Published scoped contributor issues, including `good first issue` and
+  `help wanted` labels, and documented the first contribution path.
 
 ## Later
 

@@ -51,6 +51,10 @@ Want to see the result format before scanning your own machine? Click
 assessment, evidence, action, and export views. Demo data is clearly labeled
 and never writes to the persisted scan-history or action-state databases.
 
+<p align="center">
+  <img src="docs/assets/demo-mode.gif" width="900" alt="Demo mode walkthrough: Home, Assessment, Evidence, and Actions pages with synthetic data">
+</p>
+
 | Page | What it adds |
 |---|---|
 | **Assessment** | One explainable exposure score (`exposure-v1`): severity breakdown, confidence, verification status, coverage gaps, and methodology limits. Export the same bundle as PDF, JSON, or CSV. |
@@ -122,8 +126,9 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest app/tests/ -q -p no:cachepr
 Current local result: **618 passed, 113 subtests passed** in about 4 minutes.
 
 The GitHub Actions workflow runs the same suite on Linux and Windows for pushes
-to `main` and pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
-development workflow.
+to `main` and pull requests. It also installs the package and launches the
+`dfa` entry point in a short startup smoke test. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
 
 ## Screenshots
 
@@ -158,6 +163,7 @@ app/core/reporting/             one report bundle rendered to PDF / JSON / CSV
 app/services/                   system, browser, file-metadata, email, and username services
 pyproject.toml                  package metadata and dfa command entry points
 scripts/generate_sample_report.py  regenerates the synthetic sample report
+scripts/generate_demo_gif.py    regenerates the demo walkthrough GIF
 ```
 
 Every scan produces the shared data models in `app/models/common.py`. PDF,
@@ -189,7 +195,10 @@ See [docs/PRIVACY.md](docs/PRIVACY.md) for the exact boundaries and limitations.
 ## Contributing
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for
-setup, test, and review expectations. For security issues, follow
+setup, test, and review expectations. Look for issues labeled
+[`good first issue`](https://github.com/Athuljose77/digital-footprint-analyzer/labels/good%20first%20issue)
+or [`help wanted`](https://github.com/Athuljose77/digital-footprint-analyzer/labels/help%20wanted)
+if you want a scoped place to start. For security issues, follow
 [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
 See [ROADMAP.md](ROADMAP.md) for planned work and [CHANGELOG.md](CHANGELOG.md)

@@ -5,12 +5,17 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QTimer
 from app.ui.main_window import MainWindow
 from app.ui.theme import apply_theme, is_dark
 
 
 def main():
     app = QApplication(sys.argv)
+
+    # The packaging smoke test starts the real window and exits on the first
+    # event-loop turn. It catches missing resources/plugins without hanging CI.
+    smoke_test = "--smoke-test" in sys.argv[1:]
 
     # Apply the saved theme before the first window is built, so the app
     # never flashes the wrong colors. MainWindow re-applies it afterwards,
@@ -34,6 +39,8 @@ def main():
 
     window = MainWindow()
     window.show()
+    if smoke_test:
+        QTimer.singleShot(0, app.quit)
     sys.exit(app.exec())
 
 
