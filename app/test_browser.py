@@ -246,7 +246,196 @@ def test_firefox_profile_and_extensions():
 
 
 # ============================================================
-# 6. LINUX BROWSER DETECTION (MOCKED SCENARIOS)
+# 6. WINDOWS FIREFOX COVERAGE
+# ============================================================
+
+def test_windows_firefox_profile_coverage():
+    print("\n--- 6. Testing Windows Firefox Profile Coverage ---")
+    firefox_spec = next(
+        browser for browser in _WINDOWS_BROWSERS
+        if browser["name"] == "Mozilla Firefox"
+    ).copy()
+    # Use host-native separators because the scanner test runs on both
+    # Windows and Linux.
+    firefox_spec["user_data_subpath"] = os.path.join("Mozilla", "Firefox")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        appdata = os.path.join(tmpdir, "AppData", "Roaming")
+        programfiles = os.path.join(tmpdir, "Program Files")
+        firefox_root = os.path.join(appdata, "Mozilla", "Firefox")
+        firefox_exe = os.path.join(programfiles, "Mozilla Firefox", "firefox.exe")
+        valid_profile = os.path.join(firefox_root, "abc.default-release")
+        missing_profile = os.path.join(firefox_root, "missing.default-release")
+
+        os.makedirs(valid_profile, exist_ok=True)
+        os.makedirs(os.path.dirname(firefox_exe), exist_ok=True)
+        open(firefox_exe, "w", encoding="utf-8").close()
+
+        with open(os.path.join(firefox_root, "profiles.ini"), "w", encoding="utf-8") as f:
+            f.write(
+                "[General]\n"
+                "StartWithLastProfile=1\n\n"
+                "[Profile0]\n"
+                "Name=default-release\n"
+                "IsRelative=1\n"
+                "Path=abc.default-release\n"
+                "Default=1\n\n"
+                "[Profile1]\n"
+                "Name=missing-release\n"
+                "IsRelative=1\n"
+                "Path=missing.default-release\n"
+            )
+
+        with open(os.path.join(valid_profile, "extensions.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "schemaVersion": 35,
+                    "addons": [
+                        {
+                            "id": "uBlock0@raymondhill.net",
+                            "defaultLocale": {"name": "uBlock Origin"},
+                            "version": "1.75.0",
+                            "type": "extension",
+                            "active": True,
+                        }
+                    ],
+                },
+                f,
+            )
+
+        detection = {
+            "detected": True,
+            "name": "Mozilla Firefox",
+            "version": "131.0",
+            "executable_path": firefox_exe,
+            "detection_source": "Filesystem (executable)",
+            "sources_checked": [f"Filesystem ({firefox_exe})"],
+            "sources_failed": [],
+        }
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "APPDATA": appdata,
+                "PROGRAMFILES": programfiles,
+                "ProgramW6432": programfiles,
+                "PROGRAMFILES(X86)": programfiles,
+                "LOCALAPPDATA": "",
+            },
+            clear=False,
+        ), mock.patch(
+            "app.services.browser_service._WINDOWS_BROWSERS",
+            [firefox_spec],
+        ), mock.patch(
+            "app.services.browser_service._detect_windows_browser",
+            return_value=detection,
+        ), mock.patch(
+            "app.services.browser_service.sys",
+            mock.Mock(platform="win32"),
+        ):
+            result = _scan_windows_browsers()
+
+        assert result["status"] == "SUCCESS"
+        assert result["coverage"]["browsers_searched"] == ["Mozilla Firefox"]
+        assert result["coverage"]["browsers_detected"] == ["Mozilla Firefox"]
+        assert result["coverage"]["profiles_scanned"] == 1
+        assert result["coverage"]["extensions_found"] == 1
+
+        browser = result["browsers"][0]
+        assert browser["name"] == "Mozilla Firefox"
+        assert browser["version"] == "131.0"
+        assert browser["profiles"] == ["default-release"]
+        assert browser["extension_count"] == 1
+        assert browser["profiles_unreadable"] == []
+        assert any(
+            "missing-release" in gap and "not found" in gap
+            for gap in browser["profile_coverage_gaps"]
+        )
+
+        extension = result["extensions"][0]
+        assert extension["name"] == "uBlock Origin"
+        assert extension["browser"] == "Mozilla Firefox"
+        assert extension["profile"] == "default-release"
+
+        # The sensitive Firefox profile databases are not touched by the scanner.
+        assert all(
+            not any(
+                sensitive in error.lower()
+                for sensitive in ("history", "cookies", "logins", "session")
+            )
+            for error in result["errors"]
+        )
+
+    assert "Mozilla Firefox" not in _UNSUPPORTED_BROWSERS
+    print("Windows Firefox profile coverage passed.")
+
+
+# ============================================================
+# 7. WINDOWS FIREFOX EXECUTABLE DISCOVERY
+# ============================================================
+
+def test_windows_firefox_executable_discovery():
+    print("\n--- 7. Testing Windows Firefox Executable Discovery ---")
+    firefox_spec = next(
+        browser for browser in _WINDOWS_BROWSERS
+        if browser["name"] == "Mozilla Firefox"
+    ).copy()
+    # Use host-native separators because this test runs on both Windows and Linux.
+    firefox_spec["filesystem_paths"] = [
+        ("PROGRAMFILES", os.path.join("Mozilla Firefox", "firefox.exe"))
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        programfiles = os.path.join(tmpdir, "Program Files")
+        firefox_exe = os.path.join(programfiles, "Mozilla Firefox", "firefox.exe")
+        os.makedirs(os.path.dirname(firefox_exe), exist_ok=True)
+        open(firefox_exe, "w", encoding="utf-8").close()
+
+        fake_winreg = mock.Mock()
+        fake_winreg.HKEY_LOCAL_MACHINE = object()
+        fake_winreg.HKEY_CURRENT_USER = object()
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PROGRAMFILES": programfiles,
+                "ProgramW6432": "",
+                "PROGRAMFILES(X86)": "",
+                "LOCALAPPDATA": "",
+                "APPDATA": "",
+            },
+            clear=False,
+        ), mock.patch.dict(
+            sys.modules,
+            {"winreg": fake_winreg},
+        ), mock.patch(
+            "app.services.browser_service._registry_key_exists",
+            return_value=False,
+        ), mock.patch(
+            "app.services.browser_service._read_registry_string",
+            return_value=None,
+        ), mock.patch(
+            "app.services.browser_service.sys",
+            mock.Mock(platform="win32"),
+        ), mock.patch(
+            "app.services.browser_service.subprocess.run",
+            return_value=mock.Mock(
+                returncode=0,
+                stdout="Mozilla Firefox 131.0\n",
+            ),
+        ):
+            result = _detect_windows_browser(firefox_spec)
+
+        assert result["detected"] is True
+        assert result["executable_path"] == firefox_exe
+        assert result["version"] == "131.0"
+        assert result["detection_source"] == "Filesystem (executable)"
+
+    print("Windows Firefox executable discovery passed.")
+
+
+# ============================================================
+# 8. LINUX BROWSER DETECTION (MOCKED SCENARIOS)
 # ============================================================
 
 def test_linux_browser_detection_mocked():
@@ -295,7 +484,7 @@ def test_linux_browser_detection_mocked():
 
 
 # ============================================================
-# 7. ZEN BROWSER MOCK SCENARIOS & FIREFOX SEPARATION
+# 9. ZEN BROWSER MOCK SCENARIOS & FIREFOX SEPARATION
 # ============================================================
 
 def test_zen_browser_mock_scenarios():
@@ -391,7 +580,7 @@ def test_zen_browser_mock_scenarios():
 
 
 # ============================================================
-# 8. LINUX SCANNER WITH ALL BROWSERS MISSING (GRACEFUL HANDLING)
+# 10. LINUX SCANNER WITH ALL BROWSERS MISSING (GRACEFUL HANDLING)
 # ============================================================
 
 def test_linux_scanner_all_missing_mocked():
@@ -421,7 +610,7 @@ def test_linux_scanner_all_missing_mocked():
 
 
 # ============================================================
-# 8. WINDOWS SCANNER MOCKS (REGRESSION CHECK)
+# 11. WINDOWS SCANNER MOCKS (REGRESSION CHECK)
 # ============================================================
 
 def test_windows_scanner_mocked():
