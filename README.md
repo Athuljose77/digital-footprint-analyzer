@@ -41,7 +41,7 @@ project takes the opposite approach:
 | Module | What it collects |
 |---|---|
 | **System Footprint** | OS details, installed applications, running processes, startup items |
-| **Browser Footprint** | Detected browsers, profiles, extension metadata, scan-coverage notes |
+| **Browser Footprint** | Detected browsers, profiles, extension metadata, scan-coverage notes. Windows supports Chrome, Edge, and Firefox. |
 | **File Metadata** | Metadata from one explicitly selected file (never scanned recursively) |
 | **Full Scan** | System + Browser together, with File Metadata only when a file is selected |
 | **Public Lookup** | Email breach and username presence checks—the only features that use the network |

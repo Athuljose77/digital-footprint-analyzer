@@ -49,6 +49,24 @@ _PROFILE_DIR_PREFIXES = ("Default", "Profile ")
 # Supported browsers and their Windows-specific metadata.
 _WINDOWS_BROWSERS: List[Dict[str, Any]] = [
     {
+        "name": "Mozilla Firefox",
+        "type": "firefox",
+        "registry_app_path": r"Software\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe",
+        "registry_version_paths": [
+            (r"Software\Mozilla\Mozilla Firefox", "CurrentVersion"),
+            (r"Software\Mozilla\Firefox", "CurrentVersion"),
+        ],
+        "user_data_env": "APPDATA",
+        "user_data_subpath": r"Mozilla\Firefox",
+        "exe_relative": r"Mozilla Firefox\firefox.exe",
+        "filesystem_paths": [
+            ("PROGRAMFILES", r"Mozilla Firefox\firefox.exe"),
+            ("ProgramW6432", r"Mozilla Firefox\firefox.exe"),
+            ("PROGRAMFILES(X86)", r"Mozilla Firefox\firefox.exe"),
+            ("LOCALAPPDATA", r"Mozilla Firefox\firefox.exe"),
+        ],
+    },
+    {
         "name": "Google Chrome",
         "registry_app_path": r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe",
         "registry_version_paths": [
@@ -71,7 +89,7 @@ _WINDOWS_BROWSERS: List[Dict[str, Any]] = [
 ]
 
 # Browsers we explicitly do NOT scan (for transparency).
-_UNSUPPORTED_BROWSERS = ["Mozilla Firefox", "Opera", "Brave", "Vivaldi", "Safari"]
+_UNSUPPORTED_BROWSERS = ["Opera", "Brave", "Vivaldi", "Safari"]
 
 # Supported browsers and their Linux-specific metadata.
 _LINUX_BROWSERS: List[Dict[str, Any]] = [
@@ -269,6 +287,7 @@ def _detect_windows_browser(browser_spec: Dict[str, Any]) -> Dict[str, Any]:
     name = browser_spec["name"]
     detected = False
     version: Optional[str] = None
+    executable_path: Optional[str] = None
     detection_source: Optional[str] = None
     sources_checked: List[str] = []
     sources_failed: List[str] = []
@@ -281,6 +300,14 @@ def _detect_windows_browser(browser_spec: Dict[str, Any]) -> Dict[str, Any]:
         if _registry_key_exists(winreg.HKEY_LOCAL_MACHINE, reg_app):
             detected = True
             detection_source = "Windows Registry (App Paths)"
+            # App Paths stores the executable as its unnamed/default value.
+            # Reading it lets version detection work even when the install
+            # directory is not one of the standard filesystem locations.
+            reg_exe = _read_registry_string(winreg.HKEY_LOCAL_MACHINE, reg_app, "")
+            if reg_exe:
+                reg_exe = reg_exe.strip().strip('"')
+                if os.path.isfile(reg_exe):
+                    executable_path = reg_exe
         else:
             sources_failed.append(source_label)
     except Exception:
@@ -311,25 +338,73 @@ def _detect_windows_browser(browser_spec: Dict[str, Any]) -> Dict[str, Any]:
             sources_failed.append(source_label)
 
     # --- 3. Filesystem exe check ---
-    env_var = browser_spec["user_data_env"]
-    base_dir = os.environ.get(env_var, "")
-    executable_path: Optional[str] = None
-    if base_dir:
-        exe_path = os.path.join(base_dir, browser_spec["exe_relative"])
-        source_label = f"Filesystem ({exe_path})"
-        sources_checked.append(source_label)
-        try:
-            if os.path.isfile(exe_path):
-                if not detected:
-                    detected = True
-                    detection_source = "Filesystem (executable)"
-                executable_path = exe_path
-            else:
-                sources_failed.append(source_label)
-        except PermissionError:
-            sources_failed.append(f"{source_label} [PermissionError]")
+    # Chromium browsers use a single executable relative to LOCALAPPDATA.
+    # Firefox has machine-wide and per-user install locations, so its spec
+    # may provide an ordered list of environment-variable based paths.
+    filesystem_paths = browser_spec.get("filesystem_paths", [])
+    if filesystem_paths:
+        for path_env, relative_path in filesystem_paths:
+            base_dir = os.environ.get(path_env, "")
+            if not base_dir:
+                sources_failed.append(f"Filesystem ({path_env} not set)")
+                continue
+            exe_path = os.path.join(base_dir, relative_path)
+            source_label = f"Filesystem ({exe_path})"
+            sources_checked.append(source_label)
+            try:
+                if os.path.isfile(exe_path):
+                    if not detected:
+                        detected = True
+                        detection_source = "Filesystem (executable)"
+                    if executable_path is None:
+                        executable_path = exe_path
+                    break
+                else:
+                    sources_failed.append(source_label)
+            except PermissionError:
+                sources_failed.append(f"{source_label} [PermissionError]")
     else:
-        sources_failed.append(f"Filesystem ({env_var} not set)")
+        env_var = browser_spec["user_data_env"]
+        base_dir = os.environ.get(env_var, "")
+        if base_dir:
+            exe_path = os.path.join(base_dir, browser_spec["exe_relative"])
+            source_label = f"Filesystem ({exe_path})"
+            sources_checked.append(source_label)
+            try:
+                if os.path.isfile(exe_path):
+                    if not detected:
+                        detected = True
+                        detection_source = "Filesystem (executable)"
+                    executable_path = exe_path
+                else:
+                    sources_failed.append(source_label)
+            except PermissionError:
+                sources_failed.append(f"{source_label} [PermissionError]")
+        else:
+            sources_failed.append(f"Filesystem ({env_var} not set)")
+
+    # --- 4. Version detection ---
+    if executable_path:
+        try:
+            proc = subprocess.run(
+                [executable_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if proc.returncode == 0 and proc.stdout:
+                match = re.search(
+                    r"(\d+(?:\.\d+)+[a-zA-Z0-9\-_.]*)",
+                    proc.stdout,
+                )
+                if match:
+                    version = match.group(1).rstrip(".")
+        except Exception:
+            pass
+
+    # Firefox may be detected from a registry key without an executable path.
+    # The registry version values above remain the preferred fallback in that
+    # case; no browser profile databases are opened to determine the version.
 
     return {
         "detected": detected,
@@ -566,6 +641,7 @@ def _scan_windows_browsers() -> Dict[str, Any]:
         "extensions_found": 0,
         "sources_checked": [],
         "sources_failed": [],
+        "profile_coverage_gaps": [],
     }
     errors: List[str] = []
 
@@ -591,10 +667,62 @@ def _scan_windows_browsers() -> Dict[str, Any]:
             "detection_source": detection.get("detection_source", "Unknown"),
             "profiles": [],
             "profile_paths": [],
+            "profiles_unreadable": [],
+            "profile_coverage_gaps": [],
             "extension_count": 0,
         }
 
-        # Discover profiles
+        # Firefox stores profiles under %APPDATA%\\Mozilla\\Firefox and
+        # describes them in profiles.ini. Reuse the existing Firefox parser
+        # instead of treating Firefox like Chromium.
+        if browser_spec.get("type") == "firefox":
+            env_var = browser_spec["user_data_env"]
+            base_dir = os.environ.get(env_var, "")
+            if not base_dir:
+                gap = f"{browser_name}: {env_var} environment variable not set"
+                errors.append(gap)
+                browser_info["profile_coverage_gaps"].append(gap)
+                coverage["profile_coverage_gaps"].append(gap)
+                browsers_found.append(browser_info)
+                continue
+
+            profile_root = os.path.join(base_dir, browser_spec["user_data_subpath"])
+            profiles, profile_errors = _discover_firefox_profiles_with_errors(
+                profile_root
+            )
+            for gap in profile_errors:
+                errors.append(gap)
+                browser_info["profile_coverage_gaps"].append(gap)
+                coverage["profile_coverage_gaps"].append(gap)
+                if "permission denied" in gap.lower():
+                    browser_info["profiles_unreadable"].append(gap)
+
+            for profile in profiles:
+                coverage["profiles_scanned"] += 1
+                profile_result = _collect_firefox_profile_extensions(
+                    profile["path"], profile["label"], browser_name
+                )
+                browser_info["profiles"].append(profile["label"])
+                browser_info["profile_paths"].append(profile["path"])
+                browser_info["extension_count"] += len(profile_result["extensions"])
+                all_extensions.extend(profile_result["extensions"])
+                for profile_error in profile_result["errors"]:
+                    errors.append(profile_error)
+                    browser_info["profile_coverage_gaps"].append(profile_error)
+                    coverage["profile_coverage_gaps"].append(profile_error)
+                    if "permission denied" in profile_error.lower():
+                        browser_info["profiles_unreadable"].append(profile_error)
+
+            if not profiles and not profile_errors:
+                gap = f"{browser_name}: No readable profile directories found under {profile_root}"
+                errors.append(gap)
+                browser_info["profile_coverage_gaps"].append(gap)
+                coverage["profile_coverage_gaps"].append(gap)
+
+            browsers_found.append(browser_info)
+            continue
+
+        # Chromium profile discovery
         env_var = browser_spec["user_data_env"]
         base_dir = os.environ.get(env_var, "")
         if not base_dir:
@@ -806,15 +934,21 @@ def _detect_linux_browser(browser_spec: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _discover_firefox_profiles(profile_root: str) -> List[Dict[str, str]]:
+def _discover_firefox_profiles_with_errors(
+    profile_root: str,
+) -> tuple[List[Dict[str, str]], List[str]]:
     """
-    Discover Firefox profiles under a profile root (e.g. ~/.mozilla/firefox).
-    Reads profiles.ini if present, or identifies directory names safely.
-    Returns list of {"label": ..., "path": ...} dicts.
+    Discover Firefox profiles and retain coverage errors.
+
+    Firefox's profiles.ini can contain profile entries whose directories no
+    longer exist, or directories that the process cannot read. Those cases are
+    coverage gaps and must not be silently discarded.
     """
     profiles: List[Dict[str, str]] = []
+    errors: List[str] = []
+
     if not os.path.isdir(profile_root):
-        return profiles
+        return profiles, [f"Firefox profile root not found: {profile_root}"]
 
     ini_path = os.path.join(profile_root, "profiles.ini")
     if os.path.isfile(ini_path):
@@ -822,17 +956,45 @@ def _discover_firefox_profiles(profile_root: str) -> List[Dict[str, str]]:
         try:
             cp.read(ini_path, encoding="utf-8")
             for section in cp.sections():
-                if section.lower().startswith("profile"):
-                    label = cp.get(section, "Name", fallback=section).strip()
-                    p_path = cp.get(section, "Path", fallback="").strip()
-                    is_rel = cp.get(section, "IsRelative", fallback="1").strip()
-                    if p_path:
-                        full_path = os.path.join(profile_root, p_path) if is_rel == "1" else p_path
-                        if os.path.isdir(full_path):
-                            profiles.append({"label": label, "path": full_path})
-        except Exception:
-            pass
+                if not section.lower().startswith("profile"):
+                    continue
 
+                label = cp.get(section, "Name", fallback=section).strip()
+                p_path = cp.get(section, "Path", fallback="").strip()
+                is_rel = cp.get(section, "IsRelative", fallback="1").strip()
+
+                if not p_path:
+                    errors.append(
+                        f"Firefox profile entry '{label}' has no profile path"
+                    )
+                    continue
+
+                full_path = (
+                    os.path.join(profile_root, p_path)
+                    if is_rel == "1"
+                    else p_path
+                )
+
+                if not os.path.isdir(full_path):
+                    errors.append(
+                        f"Firefox profile '{label}' could not be read: "
+                        f"profile directory not found at {full_path}"
+                    )
+                    continue
+
+                if not os.access(full_path, os.R_OK):
+                    errors.append(
+                        f"Firefox profile '{label}' could not be read: "
+                        f"permission denied at {full_path}"
+                    )
+                    continue
+
+                profiles.append({"label": label, "path": full_path})
+        except (configparser.Error, OSError, UnicodeError) as exc:
+            errors.append(f"Could not read Firefox profiles.ini: {exc}")
+
+    # If profiles.ini was absent, malformed, or yielded no readable profiles,
+    # retain the existing safe directory-based fallback.
     if not profiles:
         try:
             entries = os.listdir(profile_root)
@@ -841,10 +1003,30 @@ def _discover_firefox_profiles(profile_root: str) -> List[Dict[str, str]]:
                 if not os.path.isdir(full_path):
                     continue
                 if ".default" in entry or os.path.isfile(os.path.join(full_path, "prefs.js")):
+                    if not os.access(full_path, os.R_OK):
+                        errors.append(
+                            f"Firefox profile '{entry}' could not be read: "
+                            f"permission denied at {full_path}"
+                        )
+                        continue
                     profiles.append({"label": entry, "path": full_path})
-        except (PermissionError, OSError):
-            pass
+        except (PermissionError, OSError) as exc:
+            errors.append(f"Could not enumerate Firefox profiles: {exc}")
 
+    return profiles, errors
+
+
+def _discover_firefox_profiles(profile_root: str) -> List[Dict[str, str]]:
+    """
+    Discover Firefox profiles under a profile root (e.g. ~/.mozilla/firefox).
+    Reads profiles.ini if present, or identifies directory names safely.
+    Returns list of {"label": ..., "path": ...} dicts.
+
+    This compatibility wrapper preserves the original public/internal helper
+    contract. Call _discover_firefox_profiles_with_errors when coverage
+    diagnostics are needed.
+    """
+    profiles, _ = _discover_firefox_profiles_with_errors(profile_root)
     return profiles
 
 
